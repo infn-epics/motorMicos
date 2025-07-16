@@ -18,8 +18,9 @@ USAGE...      Motor driver support for the Micos SMC hydra controller.
 #define SMCpolluxRegulatorModeString "SMCpollux_REGULATOR_MODE"
 
 class epicsShareClass SMCpolluxController : public asynMotorController {
+  SMCpolluxAxis* axis[MAX_SMCpollux_AXES] = {nullptr};
 public:
-  SMCpolluxController(const char *portName, const char *SMCpolluxPortName, int numAxes, double movingPollPeriod, double idlePollPeriod);
+  SMCpolluxController(const char *portName, const char *SMCpolluxPortName, int numAxes, double movingPollPeriod, double idlePollPeriod,int *map=NULL);
 
   void report(FILE *fp, int level);
   SMCpolluxAxis* getAxis(asynUser *pasynUser);

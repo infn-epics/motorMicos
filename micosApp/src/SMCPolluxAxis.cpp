@@ -2,6 +2,13 @@
 #include <epicsThread.h>
 #include "SMCpolluxDriver.h"
 #include <string.h>
+#define TERMINATOR "\n"
+
+std::string trim(const std::string& s) {
+    size_t start = s.find_first_not_of(" \t\n\r\f\v");
+    size_t end   = s.find_last_not_of(" \t\n\r\f\v");
+    return (start == std::string::npos) ? "" : s.substr(start, end - start + 1);
+}
 
 /** Creates a new SMCpolluxAxis object.
   * \param[in] pC Pointer to the SMCpolluxController to which this axis belongs. 
@@ -12,24 +19,27 @@
 SMCpolluxAxis::SMCpolluxAxis(SMCpolluxController *pC, int axis,int physaddr)
   : asynMotorAxis(pC, axis),axisid(physaddr),pC_(pC)
 {  
-  sprintf(version,"NO VERSION ax %d",physaddr);
-  printf("* creating phys addr %d, axis %d \n",physaddr,axis);
-  sprintf(pC_->outString_, "%i nversion", (physaddr ));
-  pC_->writeReadController();
-  printf("* \"%s\" --> %s\n",pC_->outString_,(char*)&pC_->inString_);
-  strncpy(version,(char*)&pC_->inString_,sizeof(version));
+  asynPrint(pasynUser_, ASYN_TRACE_FLOW,
+    "creating asyn axis %d physical axis %d\n",axis,physaddr);
 
-  sprintf(pC_->outString_, "%i getpitch", (physaddr ));
+  printf("creating asyn axis %d physical axis %d\n",axis,physaddr);
+  sprintf(pC_->outString_, "%i nversion" TERMINATOR, (physaddr ));
+  pC_->writeReadController();
+  version=trim(std::string((char*)&pC_->inString_));
+  if(version.size()==0){
+    asynPrint(pasynUser_, ASYN_TRACE_ERROR,
+    "## WARNING version empty asyn axis %d physical axis %d, it may not work.. check connection and axis ids\n",axis,physaddr);
+  }
+  sprintf(pC_->outString_, "%i getpitch" TERMINATOR, (physaddr ));
   pC_->writeReadController();
   pitch_ = atof( (char *) &pC_->inString_ );
-  printf("* \"%s\" --> %f %s\n",pC_->outString_,pitch_,(char*)&pC_->inString_);
 
 
-  sprintf(pC_->outString_, "%i getpolepairs", (physaddr ));
+  sprintf(pC_->outString_, "%i getpolepairs" TERMINATOR, (physaddr ));
   pC_->writeReadController();
   polePairs_ = atoi( (char *) &pC_->inString_ );
 
-  sprintf(pC_->outString_, "%i getclperiod", (physaddr ));
+  sprintf(pC_->outString_, "%i getclperiod" TERMINATOR, (physaddr ));
   pC_->writeReadController();
   clPeriod_ = atof( (char *) &pC_->inString_ );
 
@@ -57,7 +67,7 @@ SMCpolluxAxis::SMCpolluxAxis(SMCpolluxController *pC, int axis,int physaddr)
   setIntegerParam(pC_->motorStatusGainSupport_, 1);
 
   // Determine the travel limits (will change after homing)
-  sprintf(pC_->outString_, "%i getnlimit", (physaddr ));
+  sprintf(pC_->outString_, "%i getnlimit" TERMINATOR, (physaddr ));
   pC_->writeReadController();
   sscanf(pC_->inString_, "%lf %lf", &negTravelLimit_, &posTravelLimit_);
 
@@ -82,7 +92,7 @@ void SMCpolluxAxis::report(FILE *fp, int level)
 {
   if (level > 0) {
     fprintf(fp, "  axis %d\n", axisid);
-    fprintf(fp, "  version \"%s\"\n", version);
+    fprintf(fp, "  version \"%s\"\n", version.c_str());
 
     fprintf(fp, "    motorForm %d\n", motorForm_);
     fprintf(fp, "    pitch %f\n", pitch_);
@@ -110,7 +120,7 @@ asynStatus SMCpolluxAxis::sendAccelAndVelocity(double acceleration, double veloc
 
   // Send the acceleration
   // acceleration is in units/sec/sec
-  sprintf(pC_->outString_, "%f %i sna", fabs(acceleration * axisRes_), (axisid));
+  sprintf(pC_->outString_, "%f %i sna" TERMINATOR, fabs(acceleration * axisRes_), (axisid));
   status = pC_->writeController();
   return status;
 }
@@ -124,9 +134,9 @@ asynStatus SMCpolluxAxis::move(double position, int relative, double baseVelocit
   status = sendAccelAndVelocity(acceleration, slewVelocity);
   
   if (relative) {
-    sprintf(pC_->outString_, "%f %i nr", (position * axisRes_), (axisid));
+    sprintf(pC_->outString_, "%f %i nr" TERMINATOR, (position * axisRes_), (axisid));
   } else {
-    sprintf(pC_->outString_, "%f %i nm", (position * axisRes_), (axisid));
+    sprintf(pC_->outString_, "%f %i nm" TERMINATOR, (position * axisRes_), (axisid));
   }
   status = pC_->writeController();
   return status;
@@ -140,9 +150,9 @@ asynStatus SMCpolluxAxis::home(double baseVelocity, double slewVelocity, double 
   status = sendAccelAndVelocity(acceleration, slewVelocity);
 
   if (forwards) {
-    sprintf(pC_->outString_, "%i nrm", (axisid));
+    sprintf(pC_->outString_, "%i nrm" TERMINATOR, (axisid));
   } else {
-    sprintf(pC_->outString_, "%i ncal", (axisid));
+    sprintf(pC_->outString_, "%i ncal" TERMINATOR, (axisid));
   }
   status = pC_->writeController();
   return status;
@@ -160,10 +170,10 @@ asynStatus SMCpolluxAxis::moveVelocity(double baseVelocity, double slewVelocity,
   /* SMC hydra does not have jog command. Move to a limit*/
   if (slewVelocity > 0.) {
     status = sendAccelAndVelocity(acceleration, slewVelocity);
-    sprintf(pC_->outString_, "%f %i nm", posTravelLimit_, (axisid));
+    sprintf(pC_->outString_, "%f %i nm" TERMINATOR, posTravelLimit_, (axisid));
   } else {
     status = sendAccelAndVelocity(acceleration, (slewVelocity * -1.0));
-    sprintf(pC_->outString_, "%f %i nm", negTravelLimit_, (axisid));
+    sprintf(pC_->outString_, "%f %i nm" TERMINATOR, negTravelLimit_, (axisid));
   }
   status = pC_->writeController();
   return status;
@@ -175,10 +185,10 @@ asynStatus SMCpolluxAxis::stop(double acceleration )
   //static const char *functionName = "SMCpolluxAxis::stop";
 
   // Set stop deceleration (will be overridden by accel if accel is higher)
-  sprintf(pC_->outString_, "%f %i ssd", fabs(acceleration * axisRes_), (axisid));
+  sprintf(pC_->outString_, "%f %i ssd" TERMINATOR, fabs(acceleration * axisRes_), (axisid));
   status = pC_->writeController();
 
-  sprintf(pC_->outString_, "%i nabort", (axisid));
+  sprintf(pC_->outString_, "%i nabort" TERMINATOR, (axisid));
   status = pC_->writeController();
   return status;
 }
@@ -190,7 +200,7 @@ asynStatus SMCpolluxAxis::setPosition(double position)
 
   // The argument to the setnpos command is the distance from the current position of the
   // desired origin, which is why the position needs to be multiplied by -1.0
-  sprintf(pC_->outString_, "%f %i setnpos", (position * axisRes_ * -1.0), (axisid));
+  sprintf(pC_->outString_, "%f %i setnpos" TERMINATOR, (position * axisRes_ * -1.0), (axisid));
   status = pC_->writeController();
   return status;
 }
@@ -213,18 +223,18 @@ asynStatus SMCpolluxAxis::setClosedLoop(bool closedLoop)
       
       if (closedLoop) {
         // enable closed-loop control
-        sprintf(pC_->outString_, "%i %i setcloop", regulatorMode, (axisid));
+        sprintf(pC_->outString_, "%i %i setcloop" TERMINATOR, regulatorMode, (axisid));
         status = pC_->writeController();
         
         // reinit so the closed-loop setting takes effect (this powers on the motor)
-        sprintf(pC_->outString_, "%i init", (axisid));
+        sprintf(pC_->outString_, "%i init" TERMINATOR, (axisid));
         status = pC_->writeController();
 
         // a delay is required after the init command is sent
         epicsThreadSleep(0.2);
       } else {
         // disable closed-loop control
-        sprintf(pC_->outString_, "%i motoroff", (axisid));
+        sprintf(pC_->outString_, "%i motoroff" TERMINATOR, (axisid));
         status = pC_->writeController();
       }
       
@@ -259,7 +269,7 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
   static const char *functionName = "SMCpolluxAxis::poll";
 
   // Read the current motor position
-  sprintf(pC_->outString_, "%i np", (axisid));
+  sprintf(pC_->outString_, "%i np" TERMINATOR, (axisid));
   comStatus = pC_->writeReadController();
   if (comStatus) goto skip;
   // The response string is a double
@@ -268,7 +278,7 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
   setDoubleParam(pC_->motorEncoderPosition_, (position / axisRes_) );
   
   // Read the status of this motor
-  sprintf(pC_->outString_, "%i nst", (axisid));
+  sprintf(pC_->outString_, "%i nst" TERMINATOR, (axisid));
   comStatus = pC_->writeReadController();
   if (comStatus) goto skip;
   // The response string is an int
@@ -281,10 +291,10 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
   *moving = done ? false:true;
 
   // Read the commanded velocity and acceleration
-  sprintf(pC_->outString_, "%i gnv", (axisid));
+  sprintf(pC_->outString_, "%i gnv" TERMINATOR, (axisid));
   comStatus = pC_->writeReadController();
   
-  sprintf(pC_->outString_, "%i gna", (axisid));
+  sprintf(pC_->outString_, "%i gna" TERMINATOR, (axisid));
   comStatus = pC_->writeReadController();
 
   // Check the limit bit (0x40)
@@ -332,19 +342,19 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
   // Read switch confiruation
   // Bit 0:	polarity (0 = NO, 1 = NC)
   // Bit 1:	mask (0 = enabled, 1 = disabled)
-  sprintf(pC_->outString_, "%i getsw", (axisid));
+  sprintf(pC_->outString_, "%i getsw" TERMINATOR, (axisid));
   comStatus = pC_->writeReadController();
   if (comStatus) goto skip;
-  sscanf(pC_->inString_, "%i %i", &lowLimitConfig_, &highLimitConfig_);
+  sscanf(pC_->inString_, "%i %i" TERMINATOR, &lowLimitConfig_, &highLimitConfig_);
   ignoreLowLimit = lowLimitConfig_ & 0x2;
   ignoreHighLimit = highLimitConfig_ & 0x2;
   
   // Read status of switches 0=inactive 1=active
-  sprintf(pC_->outString_, "%i getswst", (axisid));
+  sprintf(pC_->outString_, "%i getswst" TERMINATOR, (axisid));
   comStatus = pC_->writeReadController();
   if (comStatus) goto skip;
   // The response string is of the form "0 0"
-  sscanf(pC_->inString_, "%i %i", &lowLimit, &highLimit);
+  sscanf(pC_->inString_, "%i %i" TERMINATOR, &lowLimit, &highLimit);
   //
   if (ignoreLowLimit)
     setIntegerParam(pC_->motorStatusLowLimit_, 0);

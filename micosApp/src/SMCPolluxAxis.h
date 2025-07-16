@@ -11,7 +11,7 @@ class epicsShareClass SMCpolluxAxis : public asynMotorAxis
 {
   protected:
   int axisid;
-  char version[80];
+  std::string version;
 public:
   /* These are the methods we override from the base class */
   SMCpolluxAxis(class SMCpolluxController *pC, int axis,int physaddr);

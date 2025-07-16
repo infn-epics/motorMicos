@@ -22,15 +22,18 @@ Note: This driver was tested with the Micos SMC pollux CM and
 
 #define NINT(f) (int)((f)>0 ? (f)+0.5 : (f)-0.5)
 
+static SMCpolluxController* pSMCpolluxController=NULL;
 /** Creates a new SMCpolluxController object.
   * \param[in] portName          The name of the asyn port that will be created for this driver
   * \param[in] SMCpolluxPortName  The name of the drvAsynSerialPort that was created previously to connect to the SMC pollux controller 
   * \param[in] numAxes           The number of axes that this controller supports 
   * \param[in] movingPollPeriod  The time between polls when any axis is moving 
   * \param[in] idlePollPeriod    The time between polls when no axis is moving 
+  * \param[in] map    asyn to physical axis map if 0 takes asyn=physical
+
   */
 SMCpolluxController::SMCpolluxController(const char *portName, const char *SMCpolluxPortName, int numAxes, 
-                                 double movingPollPeriod, double idlePollPeriod)
+                                 double movingPollPeriod, double idlePollPeriod, int* axismap)
   :  asynMotorController(portName, numAxes, NUM_SMCpollux_PARAMS, 
                          0, // No additional interfaces beyond those in base class
                          0, // No additional callback interfaces beyond those in base class
@@ -38,9 +41,7 @@ SMCpolluxController::SMCpolluxController(const char *portName, const char *SMCpo
                          1, // autoconnect
                          0, 0)  // Default priority and stack size
 {
-  int axis;
   asynStatus status;
-  SMCpolluxAxis *pAxis;
   static const char *functionName = "SMCpolluxController::SMCpolluxController";
 
   // Create controller-specific parameters
@@ -53,10 +54,16 @@ SMCpolluxController::SMCpolluxController(const char *portName, const char *SMCpo
       "%s: cannot connect to SMC pollux controller\n",
       functionName);
   }
-  int map[2]={7,8};
-  for (axis=0; axis<numAxes; axis++) {
-    
-    pAxis = new SMCpolluxAxis(this, axis,map[axis]);
+  asynPrint(this->pasynUserSelf, ASYN_TRACE_FLOW,
+    "creating asyn pollux controller naxis %d map 0x%p\n",numAxes,axismap);
+
+  for (int ax=0; ax<numAxes; ax++) {
+    int phys=ax+1;
+    if (axismap!=NULL) {
+      phys=axismap[ax];
+    }
+
+    axis[ax] = new SMCpolluxAxis(this, ax,phys);
   }
 
   startPoller(movingPollPeriod, idlePollPeriod, 2);
@@ -119,11 +126,9 @@ SMCpolluxAxis* SMCpolluxController::getAxis(int axisNo)
   * \param[in] idlePollPeriod    The time in ms between polls when no axis is moving 
   */
 extern "C" int SMCpolluxCreateController(const char *portName, const char *SMCpolluxPortName, int numAxes, 
-                                   int movingPollPeriod, int idlePollPeriod)
+                                   int movingPollPeriod, int idlePollPeriod,int *axmap)
 {
-  SMCpolluxController *pSMCpolluxController
-    = new SMCpolluxController(portName, SMCpolluxPortName, numAxes, movingPollPeriod/1000., idlePollPeriod/1000.);
-  pSMCpolluxController = NULL;
+  pSMCpolluxController = new SMCpolluxController(portName, SMCpolluxPortName, numAxes, movingPollPeriod/1000., idlePollPeriod/1000.,axmap);
   return(asynSuccess);
 }
 
@@ -158,15 +163,33 @@ static const iocshArg SMCpolluxCreateControllerArg1 = {"SMC pollux port name", i
 static const iocshArg SMCpolluxCreateControllerArg2 = {"Number of axes", iocshArgInt};
 static const iocshArg SMCpolluxCreateControllerArg3 = {"Moving poll period (ms)", iocshArgInt};
 static const iocshArg SMCpolluxCreateControllerArg4 = {"Idle poll period (ms)", iocshArgInt};
+static const iocshArg SMCpolluxCreateControllerArg5 = {"Axis map (comma separated)", iocshArgString};
+
 static const iocshArg * const SMCpolluxCreateControllerArgs[] = {&SMCpolluxCreateControllerArg0,
                                                              &SMCpolluxCreateControllerArg1,
                                                              &SMCpolluxCreateControllerArg2,
                                                              &SMCpolluxCreateControllerArg3,
-                                                             &SMCpolluxCreateControllerArg4};
-static const iocshFuncDef SMCpolluxCreateControllerDef = {"SMCpolluxCreateController", 5, SMCpolluxCreateControllerArgs};
+                                                             &SMCpolluxCreateControllerArg4,
+                                                            &SMCpolluxCreateControllerArg5
+
+                                                            };
+static const iocshFuncDef SMCpolluxCreateControllerDef = {"SMCpolluxCreateController", 6, SMCpolluxCreateControllerArgs};
 static void SMCpolluxCreateControllerCallFunc(const iocshArgBuf *args)
 {
-  SMCpolluxCreateController(args[0].sval, args[1].sval, args[2].ival, args[3].ival, args[4].ival);
+  int map[MAX_SMCpollux_AXES]={0};
+  int numAxes = args[2].ival;
+  int i = 0;
+  char *token=NULL;
+  if (args[5].sval !=NULL || *args[5].sval!=0){
+    char *input = strdup(args[5].sval);
+    token = strtok(input, ",");
+    while (token && i < numAxes) {
+      map[i++] = atoi(token);
+      token = strtok(NULL, ",");
+    }
+    free(input);
+}
+  SMCpolluxCreateController(args[0].sval, args[1].sval, args[2].ival, args[3].ival, args[4].ival,(i==0)?NULL:map);
 }
 
 static const iocshArg SMCpolluxChangeResolutionArg0 = {"SMC pollux port name", iocshArgString};
