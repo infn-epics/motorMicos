@@ -1,6 +1,6 @@
 
 #include <epicsThread.h>
-#include "SMCpolluxDriver.h"
+#include "SMCPolluxDriver.h"
 #include <string.h>
 #define TERMINATOR "\n"
 
