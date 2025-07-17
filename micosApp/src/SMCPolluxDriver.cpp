@@ -55,7 +55,7 @@ SMCpolluxController::SMCpolluxController(const char *portName, const char *SMCpo
       functionName);
   }
   asynPrint(this->pasynUserSelf, ASYN_TRACE_FLOW,
-    "creating asyn pollux controller naxis %d map 0x%p\n",numAxes,axismap);
+    "creating asyn pollux controller naxis %d map 0x%p polling period %f idleperiod %f\n",numAxes,axismap,movingPollPeriod,idlePollPeriod);
 
   for (int ax=0; ax<numAxes; ax++) {
     int phys=ax+1;

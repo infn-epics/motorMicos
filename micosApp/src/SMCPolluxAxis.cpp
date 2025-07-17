@@ -25,24 +25,27 @@ SMCpolluxAxis::SMCpolluxAxis(SMCpolluxController *pC, int axis,int physaddr)
   printf("creating asyn axis %d physical axis %d\n",axis,physaddr);
   sprintf(pC_->outString_, "%i nversion" TERMINATOR, (physaddr ));
   pC_->writeReadController();
-  version=trim(std::string((char*)&pC_->inString_));
+  version=trim(std::string((char*)pC_->inString_));
   if(version.size()==0){
     asynPrint(pasynUser_, ASYN_TRACE_ERROR,
     "## WARNING version empty asyn axis %d physical axis %d, it may not work.. check connection and axis ids\n",axis,physaddr);
   }
   sprintf(pC_->outString_, "%i getpitch" TERMINATOR, (physaddr ));
   pC_->writeReadController();
-  pitch_ = atof( (char *) &pC_->inString_ );
+  pitch_ = atof( (char *) pC_->inString_ );
 
 
   sprintf(pC_->outString_, "%i getpolepairs" TERMINATOR, (physaddr ));
   pC_->writeReadController();
-  polePairs_ = atoi( (char *) &pC_->inString_ );
+  polePairs_ = atoi( (char *) pC_->inString_ );
 
   sprintf(pC_->outString_, "%i getclperiod" TERMINATOR, (physaddr ));
   pC_->writeReadController();
-  clPeriod_ = atof( (char *) &pC_->inString_ );
+  clPeriod_ = atof( (char *) pC_->inString_ );
 
+  //axisRes_ = pitch_ / ( 4.0 * polePairs_);
+  axisRes_ = pitch_;
+/*
   switch (motorForm_)
   {
     case 0:
@@ -59,7 +62,7 @@ SMCpolluxAxis::SMCpolluxAxis(SMCpolluxController *pC, int axis,int physaddr)
       // For now assume clPeriod_ works for other motor forms
       axisRes_ = clPeriod_;
       break;
-  }
+  }*/
 
   /* Enable gain support so that the CNEN field can be used to send
      the init command to clear a motor fault for stepper motors, even
@@ -115,12 +118,12 @@ asynStatus SMCpolluxAxis::sendAccelAndVelocity(double acceleration, double veloc
   // static const char *functionName = "SMCpolluxAxis::sendAccelAndVelocity";
 
   // Send the velocity
-  sprintf(pC_->outString_, "%f %i snv", fabs(velocity * axisRes_), (axisid));
+  sprintf(pC_->outString_, "%.4f %i snv", fabs(velocity * axisRes_), (axisid));
   status = pC_->writeController();
 
   // Send the acceleration
   // acceleration is in units/sec/sec
-  sprintf(pC_->outString_, "%f %i sna" TERMINATOR, fabs(acceleration * axisRes_), (axisid));
+  sprintf(pC_->outString_, "%.4f %i sna" TERMINATOR, fabs(acceleration * axisRes_), (axisid));
   status = pC_->writeController();
   return status;
 }
@@ -131,13 +134,18 @@ asynStatus SMCpolluxAxis::move(double position, int relative, double baseVelocit
   asynStatus status;
   // static const char *functionName = "SMCpolluxAxis::move";
 
-  status = sendAccelAndVelocity(acceleration, slewVelocity);
-  
+  //status = sendAccelAndVelocity(acceleration, slewVelocity);
+  asynPrint(pasynUser_, ASYN_TRACE_FLOW,
+    "move physical axis %d pos %f\n",axisid,position);
+
   if (relative) {
-    sprintf(pC_->outString_, "%f %i nr" TERMINATOR, (position * axisRes_), (axisid));
+    sprintf(pC_->outString_, "%.4f %i nr" TERMINATOR, (position), (axisid));
   } else {
-    sprintf(pC_->outString_, "%f %i nm" TERMINATOR, (position * axisRes_), (axisid));
+    sprintf(pC_->outString_, "%.4f %i nm" TERMINATOR, (position), (axisid));
   }
+
+  asynPrint(pasynUser_, ASYN_TRACE_FLOW,
+    "move (%s) physical axis %d pos %f cmd:\"%s\"\n",(relative?"relative":"absolute"),axisid,position,pC_->outString_);
   status = pC_->writeController();
   return status;
 }
@@ -154,6 +162,8 @@ asynStatus SMCpolluxAxis::home(double baseVelocity, double slewVelocity, double 
   } else {
     sprintf(pC_->outString_, "%i ncal" TERMINATOR, (axisid));
   }
+  asynPrint(pasynUser_, ASYN_TRACE_FLOW,
+    "home (%s ) physical axis %d cmd:\"%s\"\n",(forwards?"forwards":"backwards"),axisid,pC_->outString_);
   status = pC_->writeController();
   return status;
 }
@@ -170,10 +180,10 @@ asynStatus SMCpolluxAxis::moveVelocity(double baseVelocity, double slewVelocity,
   /* SMC hydra does not have jog command. Move to a limit*/
   if (slewVelocity > 0.) {
     status = sendAccelAndVelocity(acceleration, slewVelocity);
-    sprintf(pC_->outString_, "%f %i nm" TERMINATOR, posTravelLimit_, (axisid));
+    sprintf(pC_->outString_, "%.4f %i nm" TERMINATOR, posTravelLimit_, (axisid));
   } else {
     status = sendAccelAndVelocity(acceleration, (slewVelocity * -1.0));
-    sprintf(pC_->outString_, "%f %i nm" TERMINATOR, negTravelLimit_, (axisid));
+    sprintf(pC_->outString_, "%.4f %i nm" TERMINATOR, negTravelLimit_, (axisid));
   }
   status = pC_->writeController();
   return status;
@@ -185,8 +195,8 @@ asynStatus SMCpolluxAxis::stop(double acceleration )
   //static const char *functionName = "SMCpolluxAxis::stop";
 
   // Set stop deceleration (will be overridden by accel if accel is higher)
-  sprintf(pC_->outString_, "%f %i ssd" TERMINATOR, fabs(acceleration * axisRes_), (axisid));
-  status = pC_->writeController();
+  //sprintf(pC_->outString_, "%f %i ssd" TERMINATOR, fabs(acceleration * axisRes_), (axisid));
+  //status = pC_->writeController();
 
   sprintf(pC_->outString_, "%i nabort" TERMINATOR, (axisid));
   status = pC_->writeController();
@@ -200,7 +210,7 @@ asynStatus SMCpolluxAxis::setPosition(double position)
 
   // The argument to the setnpos command is the distance from the current position of the
   // desired origin, which is why the position needs to be multiplied by -1.0
-  sprintf(pC_->outString_, "%f %i setnpos" TERMINATOR, (position * axisRes_ * -1.0), (axisid));
+  sprintf(pC_->outString_, "%.4f %i setnpos" TERMINATOR, (position * axisRes_ * -1.0), (axisid));
   status = pC_->writeController();
   return status;
 }
@@ -264,25 +274,31 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
   int ignoreHighLimit;
   int axisStatus=-1;
   double position=0.0;
-  asynStatus comStatus;
+  asynStatus comStatus=asynSuccess;
 
   static const char *functionName = "SMCpolluxAxis::poll";
-
+  *pC_->outString_=0;
   // Read the current motor position
-  sprintf(pC_->outString_, "%i np" TERMINATOR, (axisid));
-  comStatus = pC_->writeReadController();
-  if (comStatus) goto skip;
+  sprintf(pC_->outString_, "%i npos" TERMINATOR, (axisid));
+  pC_->writeReadController();
+  if(*((char *) pC_->inString_)==0){
+    comStatus=asynError;
+    goto skip;
+  }
   // The response string is a double
-  position = atof( (char *) &pC_->inString_);
-  setDoubleParam(pC_->motorPosition_, (position / axisRes_) );
-  setDoubleParam(pC_->motorEncoderPosition_, (position / axisRes_) );
+  position = atof( (char *) pC_->inString_);
+  setDoubleParam(pC_->motorPosition_, (position ) );
+  setDoubleParam(pC_->motorEncoderPosition_, (position) );
   
   // Read the status of this motor
   sprintf(pC_->outString_, "%i nst" TERMINATOR, (axisid));
-  comStatus = pC_->writeReadController();
-  if (comStatus) goto skip;
+  pC_->writeReadController();
+  if(*((char *) pC_->inString_)==0){
+    comStatus=asynError;
+    goto skip;
+  }
   // The response string is an int
-  axisStatus = atoi( (char *) &pC_->inString_);
+  axisStatus = atoi( (char *) pC_->inString_);
   
   // Check the moving bit
   done = !(axisStatus & 0x1);
@@ -290,50 +306,55 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
   setIntegerParam(pC_->motorStatusMoving_, !done);
   *moving = done ? false:true;
 
-  // Read the commanded velocity and acceleration
-  sprintf(pC_->outString_, "%i gnv" TERMINATOR, (axisid));
-  comStatus = pC_->writeReadController();
+  // // Read the commanded velocity and acceleration
+  // sprintf(pC_->outString_, "%i gnv" TERMINATOR, (axisid));
+  // comStatus = pC_->writeReadController();
   
-  sprintf(pC_->outString_, "%i gna" TERMINATOR, (axisid));
-  comStatus = pC_->writeReadController();
+  // sprintf(pC_->outString_, "%i gna" TERMINATOR, (axisid));
+  // comStatus = pC_->writeReadController();
 
   // Check the limit bit (0x40)
   if (axisStatus & 0x40)
   {
     asynPrint(this->pasynUser_, ASYN_TRACEIO_DRIVER, 
-      "%s: axis %i limit indicator active.\n",
+      "%s: axis %i driver enabled indicator active.\n",
+      functionName, (axisid));
+      
+    // query limits?
+  }
+  if (axisStatus & 0x80)
+  {
+    asynPrint(this->pasynUser_, ASYN_TRACEIO_DRIVER, 
+      "%s: axis %i motion enabled indicator active.\n",
+      functionName, (axisid));
+      
+    // query limits?
+  }
+  if (axisStatus & 0x4)
+  {
+    asynPrint(this->pasynUser_, ASYN_TRACEIO_DRIVER, 
+      "%s: axis %i error indicator active.\n",
+      functionName, (axisid));
+      
+    // query limits?
+  }
+  if (axisStatus & 0x10)
+  {
+    asynPrint(this->pasynUser_, ASYN_TRACEIO_DRIVER, 
+      "%s: axis %i speed mode indicator active.\n",
+      functionName, (axisid));
+      
+    // query limits?
+  }
+  if (axisStatus & 0x20)
+  {
+    asynPrint(this->pasynUser_, ASYN_TRACEIO_DRIVER, 
+      "%s: axis %i closed loop indicator active.\n",
       functionName, (axisid));
       
     // query limits?
   }
 
-  // Check the e-stop bit (0x80)
-  if (axisStatus & 0x80)
-  {
-    asynPrint(this->pasynUser_, ASYN_TRACEIO_DRIVER, 
-      "%s: axis %i emergency stopped.\n",
-      functionName, (axisid));
-  }
-  
-  // Check the e-stop switch active bit (0x200)
-  if (axisStatus & 0x200)
-  {
-    asynPrint(this->pasynUser_, ASYN_TRACEIO_DRIVER, 
-      "%s: axis %i emergency stop switch active.\n",
-      functionName, (axisid));
-    setIntegerParam(pC_->motorStatusProblem_, 1);
-  }
-  else{
-    setIntegerParam(pC_->motorStatusProblem_, 0);
-  }
-
-  // Check the device busy bit (0x400)
-  if (axisStatus & 0x400)
-  {
-    asynPrint(this->pasynUser_, ASYN_TRACE_ERROR, 
-      "%s: axis %i device is busy - move commands discarded.\n",
-      functionName, (axisid));
-  }
 
   // Read the limit status
   // Note: calibration switch = low limit; range measure switch = high limit
@@ -343,37 +364,44 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
   // Bit 0:	polarity (0 = NO, 1 = NC)
   // Bit 1:	mask (0 = enabled, 1 = disabled)
   sprintf(pC_->outString_, "%i getsw" TERMINATOR, (axisid));
-  comStatus = pC_->writeReadController();
-  if (comStatus) goto skip;
-  sscanf(pC_->inString_, "%i %i" TERMINATOR, &lowLimitConfig_, &highLimitConfig_);
-  ignoreLowLimit = lowLimitConfig_ & 0x2;
-  ignoreHighLimit = highLimitConfig_ & 0x2;
+  pC_->writeReadController();
   
-  // Read status of switches 0=inactive 1=active
-  sprintf(pC_->outString_, "%i getswst" TERMINATOR, (axisid));
-  comStatus = pC_->writeReadController();
-  if (comStatus) goto skip;
-  // The response string is of the form "0 0"
-  sscanf(pC_->inString_, "%i %i" TERMINATOR, &lowLimit, &highLimit);
-  //
-  if (ignoreLowLimit)
-    setIntegerParam(pC_->motorStatusLowLimit_, 0);
-  else
-    setIntegerParam(pC_->motorStatusLowLimit_, lowLimit);
+  if (sscanf(pC_->inString_, "%i %i" TERMINATOR, &lowLimitConfig_, &highLimitConfig_)==2){
+    ignoreLowLimit = lowLimitConfig_ & 0x2;
+    ignoreHighLimit = highLimitConfig_ & 0x2;
+    
+    // Read status of switches 0=inactive 1=active
+    sprintf(pC_->outString_, "%i getswst" TERMINATOR, (axisid));
+    pC_->writeReadController();
+    
+    // The response string is of the form "0 0"
+    if (sscanf(pC_->inString_, "%i %i" TERMINATOR, &lowLimit, &highLimit)==2){
+      
+      if (ignoreLowLimit)
+        setIntegerParam(pC_->motorStatusLowLimit_, 0);
+      else
+        setIntegerParam(pC_->motorStatusLowLimit_, lowLimit);
 
-  if (ignoreHighLimit)
-    setIntegerParam(pC_->motorStatusHighLimit_, 0);
-  else
-    setIntegerParam(pC_->motorStatusHighLimit_, highLimit);
-
+      if (ignoreHighLimit)
+        setIntegerParam(pC_->motorStatusHighLimit_, 0);
+      else
+        setIntegerParam(pC_->motorStatusHighLimit_, highLimit);
+    }
+}
   /*setIntegerParam(pC_->motorStatusAtHome_, limit);*/
 
   // Check the drive power bit (0x100)
-  driveOn = (axisStatus & 0x100) ? 0 : 1;
+  driveOn = (axisStatus & 0x40) ? 0 : 1;
   setIntegerParam(pC_->motorStatusPowerOn_, driveOn);
   setIntegerParam(pC_->motorStatusProblem_, 0);
+  if(comStatus==asynSuccess){
+    callParamCallbacks();
+    return asynSuccess;
 
+  }
   skip:
+   asynPrint(pasynUser_, ASYN_TRACE_ERROR,
+    "## %s: Error  physical axis %d sending command \"%s\" = \"%s\"\n",functionName,axisid,pC_->outString_,pC_->inString_);
   setIntegerParam(pC_->motorStatusProblem_, comStatus ? 1:0);
   callParamCallbacks();
   return comStatus ? asynError : asynSuccess;
