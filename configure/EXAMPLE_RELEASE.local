@@ -1,4 +1,6 @@
-MOTOR=
--include $(MOTOR)/modules/RELEASE.$(EPICS_HOST_ARCH).local
-# path to motorMicos is needed to build the IOC inside motorMicos, but outside motor
-MOTOR_MICOS=
+EPICS_BASE=/epics/epics-base
+MOTOR=/epics/support/motor
+ASYN=/epics/support/asyn
+MOTOR_MICOS=/app/motorMicos
+SEQ=/epics/support/sequencer
+BUILD_IOCS = YES

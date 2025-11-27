@@ -1,5 +1,6 @@
 
 #include <epicsThread.h>
+#include <epicsTime.h>
 #include "SMCPolluxDriver.h"
 #include <string.h>
 #define TERMINATOR "\n"
@@ -275,6 +276,7 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
   int axisStatus=-1;
   double position=0.0;
   asynStatus comStatus=asynSuccess;
+  static int pollCount = 0;
 
   static const char *functionName = "SMCpolluxAxis::poll";
   *pC_->outString_=0;
@@ -305,6 +307,12 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
   setIntegerParam(pC_->motorStatusDone_, done);
   setIntegerParam(pC_->motorStatusMoving_, !done);
   *moving = done ? false:true;
+
+  // Debug: Print poll info every 10 polls
+  if (++pollCount % 10 == 0) {
+    printf("Axis %d: Poll #%d, pos=%.4f, moving=%d\n", 
+           axisid, pollCount, position, !done);
+  }
 
   // // Read the commanded velocity and acceleration
   // sprintf(pC_->outString_, "%i gnv" TERMINATOR, (axisid));
@@ -356,38 +364,43 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
   }
 
 
-  // Read the limit status
+  // Read the limit status only when motor is idle to reduce communication overhead
   // Note: calibration switch = low limit; range measure switch = high limit
   // also need to read the switch confiruation to see if limits are ignored"
 
-  // Read switch confiruation
-  // Bit 0:	polarity (0 = NO, 1 = NC)
-  // Bit 1:	mask (0 = enabled, 1 = disabled)
-  sprintf(pC_->outString_, "%i getsw" TERMINATOR, (axisid));
-  pC_->writeReadController();
-  
-  if (sscanf(pC_->inString_, "%i %i" TERMINATOR, &lowLimitConfig_, &highLimitConfig_)==2){
-    ignoreLowLimit = lowLimitConfig_ & 0x2;
-    ignoreHighLimit = highLimitConfig_ & 0x2;
-    
-    // Read status of switches 0=inactive 1=active
-    sprintf(pC_->outString_, "%i getswst" TERMINATOR, (axisid));
+  if (done) {
+    // Read switch confiruation
+    // Bit 0:	polarity (0 = NO, 1 = NC)
+    // Bit 1:	mask (0 = enabled, 1 = disabled)
+    sprintf(pC_->outString_, "%i getsw" TERMINATOR, (axisid));
     pC_->writeReadController();
     
-    // The response string is of the form "0 0"
-    if (sscanf(pC_->inString_, "%i %i" TERMINATOR, &lowLimit, &highLimit)==2){
+    if (sscanf(pC_->inString_, "%i %i" TERMINATOR, &lowLimitConfig_, &highLimitConfig_)==2){
+      ignoreLowLimit = lowLimitConfig_ & 0x2;
+      ignoreHighLimit = highLimitConfig_ & 0x2;
       
-      if (ignoreLowLimit)
-        setIntegerParam(pC_->motorStatusLowLimit_, 0);
-      else
-        setIntegerParam(pC_->motorStatusLowLimit_, lowLimit);
+      // Read status of switches 0=inactive 1=active
+      sprintf(pC_->outString_, "%i getswst" TERMINATOR, (axisid));
+      pC_->writeReadController();
+      
+      // The response string is of the form "0 0"
+      if (sscanf(pC_->inString_, "%i %i" TERMINATOR, &lowLimit, &highLimit)==2){
+        
+        if (ignoreLowLimit)
+          setIntegerParam(pC_->motorStatusLowLimit_, 0);
+        else
+          setIntegerParam(pC_->motorStatusLowLimit_, lowLimit);
 
-      if (ignoreHighLimit)
-        setIntegerParam(pC_->motorStatusHighLimit_, 0);
-      else
-        setIntegerParam(pC_->motorStatusHighLimit_, highLimit);
+        if (ignoreHighLimit)
+          setIntegerParam(pC_->motorStatusHighLimit_, 0);
+        else
+          setIntegerParam(pC_->motorStatusHighLimit_, highLimit);
+      }
     }
-}
+  } else {
+    // When moving, keep previous limit status to avoid extra queries
+    // The limits are unlikely to change during motion
+  }
   /*setIntegerParam(pC_->motorStatusAtHome_, limit);*/
 
   // Check the drive power bit (0x100)
