@@ -6,6 +6,7 @@
 
 #include "asynMotorController.h"
 #include "asynMotorAxis.h"
+#include <epicsTime.h>
 
 class epicsShareClass SMCpolluxAxis : public asynMotorAxis
 {
@@ -39,6 +40,8 @@ private:
   int highLimitConfig_;
   double posTravelLimit_;
   double negTravelLimit_;
+  int pollCount_;
+  epicsTimeStamp lastStatusPrintTime_;
 
 friend class SMCpolluxController;
 };

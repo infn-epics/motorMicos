@@ -18,12 +18,16 @@ std::string trim(const std::string& s) {
   * Initializes register numbers, etc.
   */
 SMCpolluxAxis::SMCpolluxAxis(SMCpolluxController *pC, int axis,int physaddr)
-  : asynMotorAxis(pC, axis),axisid(physaddr),pC_(pC)
+  : asynMotorAxis(pC, axis),axisid(physaddr),pC_(pC),pollCount_(0)
 {  
   asynPrint(pasynUser_, ASYN_TRACE_FLOW,
     "creating asyn axis %d physical axis %d\n",axis,physaddr);
 
   printf("creating asyn axis %d physical axis %d\n",axis,physaddr);
+  
+  // Initialize status print timestamp
+  epicsTimeGetCurrent(&lastStatusPrintTime_);
+  
   sprintf(pC_->outString_, "%i nversion" TERMINATOR, (physaddr ));
   pC_->writeReadController();
   version=trim(std::string((char*)pC_->inString_));
@@ -276,7 +280,6 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
   int axisStatus=-1;
   double position=0.0;
   asynStatus comStatus=asynSuccess;
-  static int pollCount = 0;
 
   static const char *functionName = "SMCpolluxAxis::poll";
   *pC_->outString_=0;
@@ -308,10 +311,23 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
   setIntegerParam(pC_->motorStatusMoving_, !done);
   *moving = done ? false:true;
 
-  // Debug: Print poll info every 10 polls
-  if (++pollCount % 10 == 0) {
+  // Debug: Print poll info every 10 polls (only if debug level >= 4)
+  if (pC_->debugLevel_ >= 4 && ++pollCount_ % 10 == 0) {
     printf("Axis %d: Poll #%d, pos=%.4f, moving=%d\n", 
-           axisid, pollCount, position, !done);
+           axisid, pollCount_, position, !done);
+  }
+
+  // Debug level 2: Print comprehensive status every 5 seconds
+  if (pC_->debugLevel_ >= 2) {
+    epicsTimeStamp currentTime;
+    epicsTimeGetCurrent(&currentTime);
+    double elapsedTime = epicsTimeDiffInSeconds(&currentTime, &lastStatusPrintTime_);
+    
+    if (elapsedTime >= 5.0) {
+      printf("[Status] Axis %d: pos=%.4f, status=0x%02X, moving=%d, done=%d, driveOn=%d\n",
+             axisid, position, axisStatus, !done, done, (axisStatus & 0x40) ? 1 : 0);
+      lastStatusPrintTime_ = currentTime;
+    }
   }
 
   // // Read the commanded velocity and acceleration
