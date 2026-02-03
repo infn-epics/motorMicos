@@ -139,14 +139,16 @@ asynStatus SMCpolluxAxis::move(double position, int relative, double baseVelocit
   asynStatus status;
   // static const char *functionName = "SMCpolluxAxis::move";
 
+  pC_->getDoubleParam(axisNo_, pC_->motorRecResolution_, &mres_); 
+
   //status = sendAccelAndVelocity(acceleration, slewVelocity);
   asynPrint(pasynUser_, ASYN_TRACE_FLOW,
     "move physical axis %d pos %f\n",axisid,position);
 
   if (relative) {
-    sprintf(pC_->outString_, "%.4f %i nr" TERMINATOR, (position), (axisid));
+    sprintf(pC_->outString_, "%.4f %i nr" TERMINATOR, (position * mres_), (axisid));
   } else {
-    sprintf(pC_->outString_, "%.4f %i nm" TERMINATOR, (position), (axisid));
+    sprintf(pC_->outString_, "%.4f %i nm" TERMINATOR, (position * mres_), (axisid));
   }
 
   asynPrint(pasynUser_, ASYN_TRACE_FLOW,
@@ -215,7 +217,8 @@ asynStatus SMCpolluxAxis::setPosition(double position)
 
   // The argument to the setnpos command is the distance from the current position of the
   // desired origin, which is why the position needs to be multiplied by -1.0
-  sprintf(pC_->outString_, "%.4f %i setnpos" TERMINATOR, (position * axisRes_ * -1.0), (axisid));
+  // sprintf(pC_->outString_, "%.4f %i setnpos" TERMINATOR, (position * axisRes_ * -1.0), (axisid));
+  sprintf(pC_->outString_, "%.4f %i setnpos" TERMINATOR, (position * mres_* -1.0), (axisid));
   status = pC_->writeController();
   return status;
 }
@@ -281,6 +284,8 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
   double position=0.0;
   asynStatus comStatus=asynSuccess;
 
+  pC_->getDoubleParam(axisNo_, pC_->motorRecResolution_, &mres_);
+
   static const char *functionName = "SMCpolluxAxis::poll";
   *pC_->outString_=0;
   // Read the current motor position
@@ -292,8 +297,9 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
   }
   // The response string is a double
   position = atof( (char *) pC_->inString_);
-  setDoubleParam(pC_->motorPosition_, (position ) );
-  setDoubleParam(pC_->motorEncoderPosition_, (position) );
+  if (mres_ <= 1e-20) mres_ = 1.;
+  setDoubleParam(pC_->motorPosition_, (position / mres_ ) );
+  setDoubleParam(pC_->motorEncoderPosition_, (position) ); // is /res_ necessary here? does the encoder provide position in mm or in steps?
   
   // Read the status of this motor
   sprintf(pC_->outString_, "%i nst" TERMINATOR, (axisid));
@@ -324,8 +330,8 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
     double elapsedTime = epicsTimeDiffInSeconds(&currentTime, &lastStatusPrintTime_);
     
     if (elapsedTime >= 5.0) {
-      printf("[Status] Axis %d: pos=%.4f, status=0x%02X, moving=%d, done=%d, driveOn=%d\n",
-             axisid, position, axisStatus, !done, done, (axisStatus & 0x40) ? 1 : 0);
+      printf("[Status] Axis %d: pos=%.4f, res=%.4f, status=0x%02X, moving=%d, done=%d, driveOn=%d\n",
+             axisid, position, mres_, axisStatus, !done, done, (axisStatus & 0x40) ? 1 : 0);
       lastStatusPrintTime_ = currentTime;
     }
   }
