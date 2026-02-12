@@ -1,6 +1,7 @@
 
 #include <epicsThread.h>
 #include <epicsTime.h>
+#include <asynOctetSyncIO.h>
 #include "SMCPolluxDriver.h"
 #include <string.h>
 #define TERMINATOR "\n"
@@ -78,6 +79,25 @@ SMCpolluxAxis::SMCpolluxAxis(SMCpolluxController *pC, int axis,int physaddr)
   sprintf(pC_->outString_, "%i getnlimit" TERMINATOR, (physaddr ));
   pC_->writeReadController();
   sscanf(pC_->inString_, "%lf %lf", &negTravelLimit_, &posTravelLimit_);
+
+  // Read switch configuration once at init time
+  // Bit 0: polarity (0 = NO, 1 = NC)
+  // Bit 1: mask (0 = enabled, 1 = disabled)
+  // Note: Pollux may return values on separate lines
+  lowLimitConfig_ = 0;
+  highLimitConfig_ = 0;
+  sprintf(pC_->outString_, "%i getsw" TERMINATOR, (physaddr));
+  pC_->writeReadController();
+  int numParsed = sscanf(pC_->inString_, "%i %i", &lowLimitConfig_, &highLimitConfig_);
+  if (numParsed == 1) {
+    size_t nread;
+    pC_->readController(pC_->inString_, sizeof(pC_->inString_), &nread, 0.5);
+    if (nread > 0) {
+      highLimitConfig_ = atoi(pC_->inString_);
+    }
+  }
+  asynPrint(pasynUser_, ASYN_TRACE_FLOW,
+    "axis %d switch config: low=%d high=%d\n", physaddr, lowLimitConfig_, highLimitConfig_);
 
 }
 /** Change the axis resolution
@@ -287,6 +307,12 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
   pC_->getDoubleParam(axisNo_, pC_->motorRecResolution_, &mres_);
 
   static const char *functionName = "SMCpolluxAxis::poll";
+
+  // Flush any stale data left in the serial input buffer from previous poll cycles.
+  // The Pollux getswst/getsw commands return values on separate lines, leaving the
+  // second line in the buffer and shifting all subsequent responses off by one.
+  pasynOctetSyncIO->flush(pC_->pasynUserController_);
+
   *pC_->outString_=0;
   // Read the current motor position
   sprintf(pC_->outString_, "%i npos" TERMINATOR, (axisid));
@@ -295,12 +321,15 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
     comStatus=asynError;
     goto skip;
   }
+
   // The response string is a double
   position = atof( (char *) pC_->inString_);
   if (mres_ <= 1e-20) mres_ = 1.;
   setDoubleParam(pC_->motorPosition_, (position / mres_ ) );
   setDoubleParam(pC_->motorEncoderPosition_, (position) ); // is /res_ necessary here? does the encoder provide position in mm or in steps?
   
+  //epicsThreadSleep(1);
+
   // Read the status of this motor
   sprintf(pC_->outString_, "%i nst" TERMINATOR, (axisid));
   pC_->writeReadController();
@@ -386,38 +415,40 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
   }
 
 
+
   // Read the limit status only when motor is idle to reduce communication overhead
   // Note: calibration switch = low limit; range measure switch = high limit
   // also need to read the switch confiruation to see if limits are ignored"
 
   if (done) {
-    // Read switch confiruation
-    // Bit 0:	polarity (0 = NO, 1 = NC)
-    // Bit 1:	mask (0 = enabled, 1 = disabled)
-    sprintf(pC_->outString_, "%i getsw" TERMINATOR, (axisid));
+    // Read status of switches 0=inactive 1=active
+    sprintf(pC_->outString_, "%i getswst" TERMINATOR, (axisid));
     pC_->writeReadController();
-    
-    if (sscanf(pC_->inString_, "%i %i" TERMINATOR, &lowLimitConfig_, &highLimitConfig_)==2){
+
+    // The response string is of the form "0 0"
+    // Pollux may return the two values on separate lines
+    int numSwStParsed = sscanf(pC_->inString_, "%i %i", &lowLimit, &highLimit);
+    if (numSwStParsed == 1) {
+      size_t nread;
+      pC_->readController(pC_->inString_, sizeof(pC_->inString_), &nread, 0.5);
+      if (nread > 0) {
+        highLimit = atoi(pC_->inString_);
+        numSwStParsed = 2;
+      }
+    }
+    if (numSwStParsed == 2) {
       ignoreLowLimit = lowLimitConfig_ & 0x2;
       ignoreHighLimit = highLimitConfig_ & 0x2;
-      
-      // Read status of switches 0=inactive 1=active
-      sprintf(pC_->outString_, "%i getswst" TERMINATOR, (axisid));
-      pC_->writeReadController();
-      
-      // The response string is of the form "0 0"
-      if (sscanf(pC_->inString_, "%i %i" TERMINATOR, &lowLimit, &highLimit)==2){
-        
-        if (ignoreLowLimit)
-          setIntegerParam(pC_->motorStatusLowLimit_, 0);
-        else
-          setIntegerParam(pC_->motorStatusLowLimit_, lowLimit);
 
-        if (ignoreHighLimit)
-          setIntegerParam(pC_->motorStatusHighLimit_, 0);
-        else
-          setIntegerParam(pC_->motorStatusHighLimit_, highLimit);
-      }
+      if (ignoreLowLimit)
+        setIntegerParam(pC_->motorStatusLowLimit_, 0);
+      else
+        setIntegerParam(pC_->motorStatusLowLimit_, lowLimit);
+
+      if (ignoreHighLimit)
+        setIntegerParam(pC_->motorStatusHighLimit_, 0);
+      else
+        setIntegerParam(pC_->motorStatusHighLimit_, highLimit);
     }
   } else {
     // When moving, keep previous limit status to avoid extra queries
