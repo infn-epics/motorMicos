@@ -49,6 +49,21 @@ SMCpolluxAxis::SMCpolluxAxis(SMCpolluxController *pC, int axis,int physaddr)
   pC_->writeReadController();
   clPeriod_ = atof( (char *) pC_->inString_ );
 
+  // Dump configured acceleration once at startup for diagnostics.
+  sprintf(pC_->outString_, "%i gna" TERMINATOR, (physaddr ));
+  pC_->writeReadController();
+  double startupAcceleration = atof((char *)pC_->inString_);
+  printf("axis %d startup acceleration %.4f\n", physaddr, startupAcceleration);
+  asynPrint(pasynUser_, ASYN_TRACE_FLOW,
+    "axis %d startup acceleration %.4f\n", physaddr, startupAcceleration);
+
+  sprintf(pC_->outString_, "%i gnv" TERMINATOR, (physaddr ));
+  pC_->writeReadController();
+  double startupVelocity = atof((char *)pC_->inString_);
+  printf("axis %d startup velocity %.4f\n", physaddr, startupVelocity);
+  asynPrint(pasynUser_, ASYN_TRACE_FLOW,
+    "axis %d startup velocity %.4f\n", physaddr, startupVelocity);
+
   //axisRes_ = pitch_ / ( 4.0 * polePairs_);
   axisRes_ = pitch_;
 /*
@@ -141,14 +156,24 @@ asynStatus SMCpolluxAxis::sendAccelAndVelocity(double acceleration, double veloc
 {
   asynStatus status;
   // static const char *functionName = "SMCpolluxAxis::sendAccelAndVelocity";
+  double controllerVelocity = fabs(velocity * axisRes_);
+  double controllerAcceleration = fabs(acceleration * axisRes_);
+
+  if (pC_->debugLevel_ >= 2) {
+    printf("[Set] Axis %d: vel=%.4f acc=%.4f (controller vel=%.4f acc=%.4f)\n",
+           axisid, fabs(velocity), fabs(acceleration), controllerVelocity, controllerAcceleration);
+    asynPrint(pasynUser_, ASYN_TRACE_FLOW,
+      "axis %d set velocity %.4f acceleration %.4f (controller %.4f %.4f)\n",
+      axisid, fabs(velocity), fabs(acceleration), controllerVelocity, controllerAcceleration);
+  }
 
   // Send the velocity
-  sprintf(pC_->outString_, "%.4f %i snv", fabs(velocity * axisRes_), (axisid));
+  sprintf(pC_->outString_, "%.4f %i snv", controllerVelocity, (axisid));
   status = pC_->writeController();
 
   // Send the acceleration
   // acceleration is in units/sec/sec
-  sprintf(pC_->outString_, "%.4f %i sna" TERMINATOR, fabs(acceleration * axisRes_), (axisid));
+  sprintf(pC_->outString_, "%.4f %i sna" TERMINATOR, controllerAcceleration, (axisid));
   status = pC_->writeController();
   return status;
 }
@@ -359,8 +384,8 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
     double elapsedTime = epicsTimeDiffInSeconds(&currentTime, &lastStatusPrintTime_);
     
     if (elapsedTime >= 5.0) {
-      printf("[Status] Axis %d: pos=%.4f, baseVelocity=%.4f, slewVelocity=%.4f, acceleration=%.4f, res=%.4f, status=0x%02X, moving=%d, done=%d, driveOn=%d\n",
-             axisid, position, baseVelocity, slewVelocity, acceleration,  mres_, axisStatus, !done, done, (axisStatus & 0x40) ? 1 : 0);
+      printf("[Status] Axis %d: pos=%.4f, res=%.4f, status=0x%02X, moving=%d, done=%d, driveOn=%d\n",
+             axisid, position, mres_, axisStatus, !done, done, (axisStatus & 0x40) ? 1 : 0);
       lastStatusPrintTime_ = currentTime;
     }
   }
