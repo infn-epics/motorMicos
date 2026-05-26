@@ -24,7 +24,7 @@ asynReport 1
 #asynSetTraceIOMask("pollux1",0,0x3F)
 
 #SMCpolluxCreateController("pollux1", "polluxPort", 6, 100, 500,"1,2,3,4,5,6", 3) ## Debug: 0=off, 1=errors, 2=status every 5s, 3=commands, 4=verbose
-SMCpolluxCreateController("pollux1", "polluxPort", 2, 100, 500,"1,2", 3) ## Debug: 0=off, 1=errors, 2=status every 5s, 3=commands, 4=verbose
+SMCpolluxCreateController("pollux1", "polluxPort", 2, 100, 500,"1,2", 3, "/path/to/MP21.init.txt") ## Debug: 0=off, 1=errors, 2=status every 5s, 3=commands, 4=verbose
 
 # asynSetTraceMask("pollux1",0,0x3F)
 # asynSetTraceIOMask("pollux1",0,0x3F)

@@ -1,0 +1,15 @@
+1 % setaxis
+1.000 % setpitch
+5.000000 % snv
+50.000 % sna
+50.000 % setnstopdecel
+5.000000 1 % setncalvel
+0.100000 2 % setncalvel
+5.000000 1 % setnrmvel
+0.100000 2 % setnrmvel
+0.100000 % setncalswdist
+3200 % setumotmin
+90 % setumotgrad
+1 0 % setsw
+2 1 % setsw
+0 % setmotiondir

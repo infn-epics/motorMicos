@@ -13,6 +13,7 @@ Note: This driver was tested with the Micos SMC pollux CM and
 #include <stdlib.h>
 #include <math.h>
 
+#include <stdio.h>
 #include <iocsh.h>
 #include <epicsThread.h>
 #include <asynOctetSyncIO.h>
@@ -33,7 +34,7 @@ static SMCpolluxController* pSMCpolluxController=NULL;
 
   */
 SMCpolluxController::SMCpolluxController(const char *portName, const char *SMCpolluxPortName, int numAxes, 
-                                 double movingPollPeriod, double idlePollPeriod, int* axismap, int debugLevel)
+                                 double movingPollPeriod, double idlePollPeriod, int* axismap, int debugLevel, const char *configFile)
   :  asynMotorController(portName, numAxes, NUM_SMCpollux_PARAMS, 
                          0, // No additional interfaces beyond those in base class
                          0, // No additional callback interfaces beyond those in base class
@@ -65,6 +66,68 @@ SMCpolluxController::SMCpolluxController(const char *portName, const char *SMCpo
     }
 
     axis[ax] = new SMCpolluxAxis(this, ax,phys);
+  }
+
+  // Load and apply axis configuration file if provided
+  if (configFile != NULL && configFile[0] != '\0') {
+    FILE *fp = fopen(configFile, "r");
+    if (fp == NULL) {
+      asynPrint(this->pasynUserSelf, ASYN_TRACE_ERROR,
+        "%s: cannot open config file '%s'\n", functionName, configFile);
+    } else {
+      char lineBuf[256];
+      while (fgets(lineBuf, sizeof(lineBuf), fp) != NULL) {
+        // Strip trailing newline/carriage-return
+        size_t len = strlen(lineBuf);
+        while (len > 0 && (lineBuf[len-1] == '\n' || lineBuf[len-1] == '\r'))
+          lineBuf[--len] = '\0';
+
+        // Skip blank lines and comment lines starting with '#'
+        if (len == 0 || lineBuf[0] == '#') continue;
+
+        // Find the '%' placeholder that represents the axis number
+        char *pct = strchr(lineBuf, '%');
+        if (pct == NULL) continue;  // no axis placeholder — skip
+
+        // Everything after '%' (plus optional space) is the command verb
+        // Build the command for each axis: "<physaddr> <verb>"
+        char *verb = pct + 1;
+        // skip optional leading space after '%'
+        while (*verb == ' ') verb++;
+
+        for (int ax=0; ax<numAxes; ax++) {
+          int phys = ax + 1;
+          if (axismap != NULL) phys = axismap[ax];
+
+          // Build the part before '%' (may contain a numeric literal like "1.000")
+          // Replace '%' with the physical axis number
+          char cmdBuf[256];
+          int prefixLen = (int)(pct - lineBuf);
+          // trim trailing space from prefix
+          while (prefixLen > 0 && lineBuf[prefixLen-1] == ' ') prefixLen--;
+
+          if (prefixLen > 0) {
+            // Line of the form: "<value> % <verb>"  →  "<value> <phys> <verb>"
+            snprintf(cmdBuf, sizeof(cmdBuf), "%.*s %d %s\n", prefixLen, lineBuf, phys, verb);
+          } else {
+            // Line of the form: "% <verb>"  →  "<phys> <verb>"
+            snprintf(cmdBuf, sizeof(cmdBuf), "%d %s\n", phys, verb);
+          }
+
+          strncpy(outString_, cmdBuf, sizeof(outString_)-1);
+          outString_[sizeof(outString_)-1] = '\0';
+
+          if (debugLevel_ >= 2) {
+            printf("[Config] Axis %d: %s", phys, cmdBuf);
+          }
+
+          writeController();
+          // Small delay so controller can process each command
+          epicsThreadSleep(0.05);
+        }
+      }
+      fclose(fp);
+    }
   }
 
   startPoller(movingPollPeriod, idlePollPeriod, 2);
@@ -199,9 +262,9 @@ asynStatus SMCpolluxController::writeReadController()
   * \param[in] idlePollPeriod    The time in ms between polls when no axis is moving 
   */
 extern "C" int SMCpolluxCreateController(const char *portName, const char *SMCpolluxPortName, int numAxes, 
-                                   int movingPollPeriod, int idlePollPeriod,int *axmap, int debugLevel)
+                                   int movingPollPeriod, int idlePollPeriod, int *axmap, int debugLevel, const char *configFile)
 {
-  pSMCpolluxController = new SMCpolluxController(portName, SMCpolluxPortName, numAxes, movingPollPeriod/1000., idlePollPeriod/1000.,axmap, debugLevel);
+  pSMCpolluxController = new SMCpolluxController(portName, SMCpolluxPortName, numAxes, movingPollPeriod/1000., idlePollPeriod/1000., axmap, debugLevel, configFile);
   return(asynSuccess);
 }
 
@@ -238,6 +301,7 @@ static const iocshArg SMCpolluxCreateControllerArg3 = {"Moving poll period (ms)"
 static const iocshArg SMCpolluxCreateControllerArg4 = {"Idle poll period (ms)", iocshArgInt};
 static const iocshArg SMCpolluxCreateControllerArg5 = {"Axis map (comma separated)", iocshArgString};
 static const iocshArg SMCpolluxCreateControllerArg6 = {"Debug level (0=off, 1=errors, 2=status every 5s, 3=commands, 4=verbose)", iocshArgInt};
+static const iocshArg SMCpolluxCreateControllerArg7 = {"Config file (optional, e.g. MP21.init.txt)", iocshArgString};
 
 static const iocshArg * const SMCpolluxCreateControllerArgs[] = {&SMCpolluxCreateControllerArg0,
                                                              &SMCpolluxCreateControllerArg1,
@@ -245,9 +309,10 @@ static const iocshArg * const SMCpolluxCreateControllerArgs[] = {&SMCpolluxCreat
                                                              &SMCpolluxCreateControllerArg3,
                                                              &SMCpolluxCreateControllerArg4,
                                                              &SMCpolluxCreateControllerArg5,
-                                                             &SMCpolluxCreateControllerArg6
+                                                             &SMCpolluxCreateControllerArg6,
+                                                             &SMCpolluxCreateControllerArg7
                                                             };
-static const iocshFuncDef SMCpolluxCreateControllerDef = {"SMCpolluxCreateController", 7, SMCpolluxCreateControllerArgs};
+static const iocshFuncDef SMCpolluxCreateControllerDef = {"SMCpolluxCreateController", 8, SMCpolluxCreateControllerArgs};
 static void SMCpolluxCreateControllerCallFunc(const iocshArgBuf *args)
 {
   int map[MAX_SMCpollux_AXES]={0};
@@ -255,8 +320,9 @@ static void SMCpolluxCreateControllerCallFunc(const iocshArgBuf *args)
   int i = 0;
   char *token=NULL;
   int debugLevel = (args[6].ival >= 0) ? args[6].ival : 0;  // Default to 0 if not specified
+  const char *configFile = (args[7].sval != NULL && args[7].sval[0] != '\0') ? args[7].sval : NULL;
   
-  if (args[5].sval !=NULL || *args[5].sval!=0){
+  if (args[5].sval !=NULL && *args[5].sval!=0){
     char *input = strdup(args[5].sval);
     token = strtok(input, ",");
     while (token && i < numAxes) {
@@ -264,8 +330,8 @@ static void SMCpolluxCreateControllerCallFunc(const iocshArgBuf *args)
       token = strtok(NULL, ",");
     }
     free(input);
-}
-  SMCpolluxCreateController(args[0].sval, args[1].sval, args[2].ival, args[3].ival, args[4].ival,(i==0)?NULL:map, debugLevel);
+  }
+  SMCpolluxCreateController(args[0].sval, args[1].sval, args[2].ival, args[3].ival, args[4].ival, (i==0)?NULL:map, debugLevel, configFile);
 }
 
 static const iocshArg SMCpolluxChangeResolutionArg0 = {"SMC pollux port name", iocshArgString};
