@@ -359,8 +359,8 @@ asynStatus SMCpolluxAxis::poll(bool *moving)
     double elapsedTime = epicsTimeDiffInSeconds(&currentTime, &lastStatusPrintTime_);
     
     if (elapsedTime >= 5.0) {
-      printf("[Status] Axis %d: pos=%.4f, res=%.4f, status=0x%02X, moving=%d, done=%d, driveOn=%d\n",
-             axisid, position, mres_, axisStatus, !done, done, (axisStatus & 0x40) ? 1 : 0);
+      printf("[Status] Axis %d: pos=%.4f, baseVelocity=%.4f, slewVelocity=%.4f, acceleration=%.4f, res=%.4f, status=0x%02X, moving=%d, done=%d, driveOn=%d\n",
+             axisid, position, baseVelocity, slewVelocity, acceleration,  mres_, axisStatus, !done, done, (axisStatus & 0x40) ? 1 : 0);
       lastStatusPrintTime_ = currentTime;
     }
   }
