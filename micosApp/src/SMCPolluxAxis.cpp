@@ -186,7 +186,7 @@ asynStatus SMCpolluxAxis::move(double position, int relative, double baseVelocit
 
   pC_->getDoubleParam(axisNo_, pC_->motorRecResolution_, &mres_); 
 
-  //status = sendAccelAndVelocity(acceleration, slewVelocity);
+  status = sendAccelAndVelocity(acceleration, slewVelocity);
   asynPrint(pasynUser_, ASYN_TRACE_FLOW,
     "move physical axis %d pos %f\n",axisid,position);
 
