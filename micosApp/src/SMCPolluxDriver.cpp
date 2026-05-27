@@ -75,7 +75,9 @@ SMCpolluxController::SMCpolluxController(const char *portName, const char *SMCpo
     if (fp == NULL) {
       asynPrint(this->pasynUserSelf, ASYN_TRACE_ERROR,
         "%s: cannot open config file '%s'\n", functionName, configFile);
+      printf("[Config] ERROR: cannot open config file '%s'\n", configFile);
     } else {
+      printf("[Config] Loading '%s' for %d axes\n", configFile, numAxes);
       char lineBuf[256];
       while (fgets(lineBuf, sizeof(lineBuf), fp) != NULL) {
         // Strip trailing newline/carriage-return
@@ -118,9 +120,7 @@ SMCpolluxController::SMCpolluxController(const char *portName, const char *SMCpo
           strncpy(outString_, cmdBuf, sizeof(outString_)-1);
           outString_[sizeof(outString_)-1] = '\0';
 
-          if (debugLevel_ >= 2) {
-            printf("[Config] Axis %d: %s", phys, cmdBuf);
-          }
+          printf("[Config] Axis %d: %s", phys, cmdBuf);
 
           writeController();
           // Small delay so controller can process each command
