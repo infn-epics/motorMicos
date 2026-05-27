@@ -174,7 +174,7 @@ asynStatus SMCpolluxAxis::sendAccelAndVelocity(double acceleration, double veloc
   }
 
   // Send the velocity
-  sprintf(pC_->outString_, "%.4f %i snv", controllerVelocity, (axisid));
+  sprintf(pC_->outString_, "%.4f %i snv" TERMINATOR, controllerVelocity, (axisid));
   status = pC_->writeController();
 
   // Send the acceleration
