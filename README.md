@@ -22,7 +22,7 @@ The SMC Pollux controller driver supports multiple axes with configurable axis m
 ### Creating a Controller
 
 ```
-SMCpolluxCreateController(portName, asynPort, numAxes, movingPollPeriod, idlePollPeriod, axisMap, debugLevel)
+SMCpolluxCreateController(portName, asynPort, numAxes, movingPollPeriod, idlePollPeriod, axisMap, debugLevel, configFile)
 ```
 
 **Parameters:**
@@ -35,23 +35,68 @@ SMCpolluxCreateController(portName, asynPort, numAxes, movingPollPeriod, idlePol
 - `debugLevel` - Optional debug output level (default: 0)
   - **0** = Off (no debug output)
   - **1** = Errors only
-  - **2** = Status every 5 seconds (position, status, moving state)
+  - **2** = Status every 5 seconds (position, velocity/accel set values, status, moving state)
   - **3** = Commands and responses (with axis ID)
   - **4** = Verbose (includes level 3 + polling details)
+- `configFile` - Optional path to an axis initialization file (see [Axis Configuration File](#axis-configuration-file))
 
 **Example:**
 ```
-# Create controller with 6 axes, status output every 5s
+# Create controller with 2 axes, status output every 5s, with config file
 drvAsynIPPortConfigure("polluxPort", "192.168.1.100:4001", 0, 0, 1)
-SMCpolluxCreateController("pollux1", "polluxPort", 6, 100, 500, "1,2,3,4,5,6", 2)
+SMCpolluxCreateController("pollux1", "polluxPort", 2, 100, 500, "1,2", 2, "/path/to/MP21.init.txt")
 ```
+
+### Axis Configuration File
+
+An optional text file can be provided to initialize axis parameters at startup (velocity, acceleration, switch config, etc.). Each line contains a Pollux command where `%` is replaced by the physical axis number for each axis.
+
+**File format:**
+```
+# Lines starting with # are comments; blank lines are ignored.
+# <value> % <command>   sets a value
+# % <command>           issues a command with no leading value
+1 % setaxis
+1.000 % setpitch
+5.000000 % snv
+50.000 % sna
+50.000 % setnstopdecel
+```
+
+The file is applied to **all** axes in sequence after the controller and axes are constructed. With `debugLevel >= 2` each sent command is printed.
+
+### Velocity / Acceleration Unit Scaling
+
+Velocity and acceleration are passed from the EPICS motor record in **steps/s** (steps/s²).
+The driver converts to controller native units (mm/s, mm/s²) by multiplying by `MRES`:
+
+```
+controller_velocity [mm/s] = EPICS_velocity [steps/s] × MRES [mm/step]
+```
+
+This ensures correct scaling for any `MRES` value (e.g. `MRES=0.0001` for 0.1 µm resolution).
+
+### Controlling Velocity/Acceleration Sending
+
+By default the driver sends the velocity and acceleration to the controller before every move.
+To rely instead on values pre-loaded at startup (from a config file or controller NVM):
+
+```
+SMCpolluxSetSendVelAccel("pollux1", 0)   # disable — use initialized values
+SMCpolluxSetSendVelAccel("pollux1", 1)   # re-enable (default)
+```
+
+This command can be placed in the startup script or issued from the iocsh prompt at any time.
+When disabled with `debugLevel >= 2`, the values that *would* have been sent are still logged.
 
 ### Debug Output Examples
 
-**Level 2** (Status every 5s):
+**Level 2** (Status every 5s + set events):
 ```
-[Status] Axis 1: pos=2.0000, status=0x40, moving=0, done=1, driveOn=1
-[Status] Axis 2: pos=3.3000, status=0x40, moving=0, done=1, driveOn=1
+axis 1 startup velocity 5.0000
+axis 1 startup acceleration 50.0000
+[Set] Axis 1: vel=1.000000 acc=0.500000 (controller vel=0.000100 acc=0.000050, mres=0.000100) sendVelAccel=1
+[Status] Axis 1: pos=2.0000, res=0.000100, status=0x40, moving=0, done=1, driveOn=1
 ```
 
 **Level 3** (Commands):

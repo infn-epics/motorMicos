@@ -156,15 +156,21 @@ asynStatus SMCpolluxAxis::sendAccelAndVelocity(double acceleration, double veloc
 {
   asynStatus status;
   // static const char *functionName = "SMCpolluxAxis::sendAccelAndVelocity";
-  double controllerVelocity = fabs(velocity * axisRes_);
-  double controllerAcceleration = fabs(acceleration * axisRes_);
+  // velocity and acceleration arrive in steps/s (steps/s^2) from the motor record.
+  // Multiply by mres_ [mm/step] to get controller native units [mm/s, mm/s^2].
+  double controllerVelocity     = fabs(velocity     * mres_);
+  double controllerAcceleration = fabs(acceleration * mres_);
 
   if (pC_->debugLevel_ >= 2) {
-    printf("[Set] Axis %d: vel=%.4f acc=%.4f (controller vel=%.4f acc=%.4f)\n",
-           axisid, fabs(velocity), fabs(acceleration), controllerVelocity, controllerAcceleration);
+    printf("[Set] Axis %d: vel=%.6f acc=%.6f (controller vel=%.6f acc=%.6f, mres=%.6f) sendVelAccel=%d\n",
+           axisid, fabs(velocity), fabs(acceleration), controllerVelocity, controllerAcceleration, mres_, pC_->sendVelAccel_);
     asynPrint(pasynUser_, ASYN_TRACE_FLOW,
-      "axis %d set velocity %.4f acceleration %.4f (controller %.4f %.4f)\n",
-      axisid, fabs(velocity), fabs(acceleration), controllerVelocity, controllerAcceleration);
+      "axis %d set velocity %.6f acceleration %.6f (controller %.6f %.6f, mres=%.6f) sendVelAccel=%d\n",
+      axisid, fabs(velocity), fabs(acceleration), controllerVelocity, controllerAcceleration, mres_, pC_->sendVelAccel_);
+  }
+
+  if (!pC_->sendVelAccel_) {
+    return asynSuccess;
   }
 
   // Send the velocity
@@ -207,6 +213,7 @@ asynStatus SMCpolluxAxis::home(double baseVelocity, double slewVelocity, double 
   asynStatus status;
   // static const char *functionName = "SMCpolluxAxis::home";
 
+  pC_->getDoubleParam(axisNo_, pC_->motorRecResolution_, &mres_);
   status = sendAccelAndVelocity(acceleration, slewVelocity);
 
   if (forwards) {
@@ -225,6 +232,7 @@ asynStatus SMCpolluxAxis::moveVelocity(double baseVelocity, double slewVelocity,
   asynStatus status;
   static const char *functionName = "SMCpolluxAxis::moveVelocity";
 
+  pC_->getDoubleParam(axisNo_, pC_->motorRecResolution_, &mres_);
   asynPrint(pasynUser_, ASYN_TRACE_FLOW,
     "%s: baseVelocity=%f, slewVelocity=%f, acceleration=%f\n",
     functionName, baseVelocity, slewVelocity, acceleration);

@@ -41,7 +41,8 @@ SMCpolluxController::SMCpolluxController(const char *portName, const char *SMCpo
                          ASYN_CANBLOCK | ASYN_MULTIDEVICE, 
                          1, // autoconnect
                          0, 0),  // Default priority and stack size
-     debugLevel_(debugLevel)
+     debugLevel_(debugLevel),
+     sendVelAccel_(1)
 {
   asynStatus status;
   static const char *functionName = "SMCpolluxController::SMCpolluxController";
@@ -268,6 +269,31 @@ extern "C" int SMCpolluxCreateController(const char *portName, const char *SMCpo
   return(asynSuccess);
 }
 
+/** Enable or disable sending velocity/acceleration to the controller on every move.
+  * When disabled, the controller uses the values set at initialization (e.g. from a config file).
+  * \param[in] SMCpolluxPortName  The asyn port name of the controller
+  * \param[in] enable            1=send on every move (default), 0=use initialized values
+  */
+extern "C" int SMCpolluxSetSendVelAccel(const char *SMCpolluxPortName, int enable)
+{
+  SMCpolluxController *pC;
+  static const char *functionName = "SMCpolluxSetSendVelAccel";
+
+  pC = (SMCpolluxController*) findAsynPortDriver(SMCpolluxPortName);
+  if (!pC) {
+    printf("SMCpolluxDriver.cpp:%s: Error port %s not found\n",
+           functionName, SMCpolluxPortName);
+    return asynError;
+  }
+
+  pC->lock();
+  pC->setSendVelAccel(enable);
+  printf("[SMCpollux] %s: sendVelAccel set to %d\n", SMCpolluxPortName, enable ? 1 : 0);
+  pC->unlock();
+
+  return asynSuccess;
+}
+
 /** Specify a new resolution for an SMC pollux axis.
   * Configuration command, called directly or from iocsh
   * \param[in] SMCpolluxPortName  The name of the drvAsynIPPPort that was created previously to connect to the SMC pollux controller 
@@ -334,6 +360,16 @@ static void SMCpolluxCreateControllerCallFunc(const iocshArgBuf *args)
   SMCpolluxCreateController(args[0].sval, args[1].sval, args[2].ival, args[3].ival, args[4].ival, (i==0)?NULL:map, debugLevel, configFile);
 }
 
+static const iocshArg SMCpolluxSetSendVelAccelArg0 = {"SMC pollux port name", iocshArgString};
+static const iocshArg SMCpolluxSetSendVelAccelArg1 = {"Enable (1=send vel/accel on move, 0=use initialized values)", iocshArgInt};
+static const iocshArg * const SMCpolluxSetSendVelAccelArgs[] = {&SMCpolluxSetSendVelAccelArg0,
+                                                                &SMCpolluxSetSendVelAccelArg1};
+static const iocshFuncDef SMCpolluxSetSendVelAccelDef = {"SMCpolluxSetSendVelAccel", 2, SMCpolluxSetSendVelAccelArgs};
+static void SMCpolluxSetSendVelAccelCallFunc(const iocshArgBuf *args)
+{
+  SMCpolluxSetSendVelAccel(args[0].sval, args[1].ival);
+}
+
 static const iocshArg SMCpolluxChangeResolutionArg0 = {"SMC pollux port name", iocshArgString};
 static const iocshArg SMCpolluxChangeResolutionArg1 = {"Axis number", iocshArgInt};
 static const iocshArg SMCpolluxChangeResolutionArg2 = {"Axis resolution", iocshArgDouble};
@@ -349,6 +385,7 @@ static void SMCpolluxChangeResolutionCallFunc(const iocshArgBuf *args)
 static void SMCpolluxRegister(void)
 {
   iocshRegister(&SMCpolluxCreateControllerDef, SMCpolluxCreateControllerCallFunc);
+  iocshRegister(&SMCpolluxSetSendVelAccelDef, SMCpolluxSetSendVelAccelCallFunc);
   iocshRegister(&SMCpolluxChangeResolutionDef, SMCpolluxChangeResolutionCallFunc);
 }
 
