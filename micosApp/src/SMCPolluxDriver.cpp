@@ -182,6 +182,44 @@ SMCpolluxAxis* SMCpolluxController::getAxis(int axisNo)
   return static_cast<SMCpolluxAxis*>(asynMotorController::getAxis(axisNo));
 }
 
+/** Extracts the axis number from a Pollux command string. 
+ * Pollux commands format is "<arg1> [arg2 ...] <axis> <verb>",
+ * i.e. the axis number is the token immediately before the
+ * final command verb.
+**/
+static int extractPolluxAxisFromCommand(const char *cmd)
+{
+  char buf[256];
+  strncpy(buf, cmd, sizeof(buf)-1);
+  buf[sizeof(buf)-1] = '\0';
+
+  // Strip trailing newline/CR so it doesn't become a stray token
+  size_t len = strlen(buf);
+  while (len > 0 && (buf[len-1] == '\n' || buf[len-1] == '\r'))
+    buf[--len] = '\0';
+
+  // Tokenize on whitespace
+  char *tokens[32];
+  int ntok = 0;
+  char *saveptr = NULL;
+  char *tok = strtok_r(buf, " \t", &saveptr);
+  while (tok != NULL && ntok < 32) {
+    tokens[ntok++] = tok;
+    tok = strtok_r(NULL, " \t", &saveptr);
+  }
+
+  // Need at least "<axis> <verb>"
+  if (ntok < 2) return -1;
+
+  // The token right before the last one (the verb) is the axis
+  char *axisTok = tokens[ntok-2];
+  char *endptr;
+  long val = strtol(axisTok, &endptr, 10);
+  if (endptr == axisTok) return -1;  // not a number
+
+  return (int)val;
+}
+
 /** Wrapper for writeController with debug logging */
 asynStatus SMCpolluxController::writeController()
 {
@@ -189,8 +227,10 @@ asynStatus SMCpolluxController::writeController()
   
   if (debugLevel_ >= 3) {
     // Try to extract axis ID from command (usually first token)
-    int axisId = -1;
-    sscanf(outString_, "%d", &axisId);
+    //int axisId = -1;
+    //sscanf(outString_, "%d", &axisId);
+    
+    int axisId = extractPolluxAxisFromCommand(outString_);
     if (axisId > 0) {
       printf("[Pollux CMD Axis %d] >> %s", axisId, outString_);
     } else {
@@ -220,8 +260,9 @@ asynStatus SMCpolluxController::writeReadController()
   
   if (debugLevel_ >= 3) {
     // Try to extract axis ID from command (usually first token)
-    int axisId = -1;
-    sscanf(outString_, "%d", &axisId);
+    //int axisId = -1;
+    //sscanf(outString_, "%d", &axisId);
+    int axisId = extractPolluxAxisFromCommand(outString_);
     if (axisId > 0) {
       printf("[Pollux CMD Axis %d] >> %s", axisId, outString_);
     } else {
@@ -232,8 +273,9 @@ asynStatus SMCpolluxController::writeReadController()
   status = asynMotorController::writeReadController();
   
   if (debugLevel_ >= 3) {
-    int axisId = -1;
-    sscanf(outString_, "%d", &axisId);
+    //int axisId = -1;
+    //sscanf(outString_, "%d", &axisId);
+    int axisId = extractPolluxAxisFromCommand(outString_);
     if (axisId > 0) {
       printf("[Pollux RESP Axis %d] << %s", axisId, inString_);
     } else {
@@ -242,8 +284,9 @@ asynStatus SMCpolluxController::writeReadController()
   }
   
   if (status != asynSuccess && debugLevel_ >= 1) {
-    int axisId = -1;
-    sscanf(outString_, "%d", &axisId);
+    //int axisId = -1;
+    //sscanf(outString_, "%d", &axisId);
+    int axisId = extractPolluxAxisFromCommand(outString_);
     if (axisId > 0) {
       printf("[Pollux ERROR Axis %d] Command failed: %s\n", axisId, outString_);
     } else {
