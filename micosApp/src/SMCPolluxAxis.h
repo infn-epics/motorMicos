@@ -25,6 +25,8 @@ public:
   asynStatus setPosition(double position);
   asynStatus setClosedLoop(bool closedLoop);
   asynStatus changeResolution(double newResolution);
+  asynStatus refreshConfiguration();
+  int getPhysicalAxis() const { return axisid; }
 
 private:
   SMCpolluxController *pC_;          /* Pointer to the asynMotorController to which this axis belongs.

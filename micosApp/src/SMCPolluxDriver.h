@@ -26,6 +26,7 @@ public:
   SMCpolluxAxis* getAxis(asynUser *pasynUser);
   SMCpolluxAxis* getAxis(int axisNo);
   asynStatus changeResolution(int axisNo, double newResolution);
+  asynStatus loadAxisConfigFile(int axisNo, const char *configFile);
   void setSendVelAccel(int enable) { sendVelAccel_ = enable ? 1 : 0; }
   asynStatus writeController();
   asynStatus writeReadController();
@@ -34,6 +35,10 @@ protected:
   int SMCpolluxRegulatorMode_;    /** Regulator mode parameter index */
   int debugLevel_;                /** Debug level: 0=off, 1=errors, 2=commands, 3=verbose */
   int sendVelAccel_;              /** 1=send velocity/accel on every move (default), 0=use controller-initialized values */
+  
+  asynStatus applyConfigFileToPhysicalAxis(
+    int physicalAxis,
+    const char *configFile);
 
 friend class SMCpolluxAxis;
 };

@@ -60,78 +60,293 @@ SMCpolluxController::SMCpolluxController(const char *portName, const char *SMCpo
   asynPrint(this->pasynUserSelf, ASYN_TRACE_FLOW,
     "creating asyn pollux controller naxis %d map 0x%p polling period %f idleperiod %f\n",numAxes,axismap,movingPollPeriod,idlePollPeriod);
 
-  for (int ax=0; ax<numAxes; ax++) {
-    int phys=ax+1;
-    if (axismap!=NULL) {
-      phys=axismap[ax];
+  // for (int ax=0; ax<numAxes; ax++) {
+  //   int phys=ax+1;
+  //   if (axismap!=NULL) {
+  //     phys=axismap[ax];
+  //   }
+
+  //   axis[ax] = new SMCpolluxAxis(this, ax,phys);
+  // }
+
+  // // Load and apply axis configuration file if provided
+  // if (configFile != NULL && configFile[0] != '\0') {
+  //   FILE *fp = fopen(configFile, "r");
+  //   if (fp == NULL) {
+  //     asynPrint(this->pasynUserSelf, ASYN_TRACE_ERROR,
+  //       "%s: cannot open config file '%s'\n", functionName, configFile);
+  //     printf("[Config] ERROR: cannot open config file '%s'\n", configFile);
+  //   } else {
+  //     printf("[Config] Loading '%s' for %d axes\n", configFile, numAxes);
+  //     char lineBuf[256];
+  //     while (fgets(lineBuf, sizeof(lineBuf), fp) != NULL) {
+  //       // Strip trailing newline/carriage-return
+  //       size_t len = strlen(lineBuf);
+  //       while (len > 0 && (lineBuf[len-1] == '\n' || lineBuf[len-1] == '\r'))
+  //         lineBuf[--len] = '\0';
+
+  //       // Skip blank lines and comment lines starting with '#'
+  //       if (len == 0 || lineBuf[0] == '#') continue;
+
+  //       // Find the '%' placeholder that represents the axis number
+  //       char *pct = strchr(lineBuf, '%');
+  //       if (pct == NULL) continue;  // no axis placeholder — skip
+
+  //       // Everything after '%' (plus optional space) is the command verb
+  //       // Build the command for each axis: "<physaddr> <verb>"
+  //       char *verb = pct + 1;
+  //       // skip optional leading space after '%'
+  //       while (*verb == ' ') verb++;
+
+  //       for (int ax=0; ax<numAxes; ax++) {
+  //         int phys = ax + 1;
+  //         if (axismap != NULL) phys = axismap[ax];
+
+  //         // Build the part before '%' (may contain a numeric literal like "1.000")
+  //         // Replace '%' with the physical axis number
+  //         char cmdBuf[256];
+  //         int prefixLen = (int)(pct - lineBuf);
+  //         // trim trailing space from prefix
+  //         while (prefixLen > 0 && lineBuf[prefixLen-1] == ' ') prefixLen--;
+
+  //         if (prefixLen > 0) {
+  //           // Line of the form: "<value> % <verb>"  →  "<value> <phys> <verb>"
+  //           snprintf(cmdBuf, sizeof(cmdBuf), "%.*s %d %s\n", prefixLen, lineBuf, phys, verb);
+  //         } else {
+  //           // Line of the form: "% <verb>"  →  "<phys> <verb>"
+  //           snprintf(cmdBuf, sizeof(cmdBuf), "%d %s\n", phys, verb);
+  //         }
+
+  //         strncpy(outString_, cmdBuf, sizeof(outString_)-1);
+  //         outString_[sizeof(outString_)-1] = '\0';
+
+  //         printf("[Config] Axis %d: %s", phys, cmdBuf);
+
+  //         writeController();
+  //         // Small delay so controller can process each command
+  //         epicsThreadSleep(0.05);
+  //       }
+  //     }
+  //     fclose(fp);
+  //   }
+  // }
+
+  for (int ax = 0; ax < numAxes; ax++) {
+    int physicalAxis = ax + 1;
+
+    if (axismap != NULL) {
+      physicalAxis = axismap[ax];
     }
 
-    axis[ax] = new SMCpolluxAxis(this, ax,phys);
-  }
+    /*
+     * The controller-level file is applied to every physical axis.
+     * Apply it before constructing SMCpolluxAxis so that the axis reads
+     * the final configured values during construction.
+     */
+    if (configFile != NULL && configFile[0] != '\0') {
+      status = applyConfigFileToPhysicalAxis(
+          physicalAxis,
+          configFile);
 
-  // Load and apply axis configuration file if provided
-  if (configFile != NULL && configFile[0] != '\0') {
-    FILE *fp = fopen(configFile, "r");
-    if (fp == NULL) {
-      asynPrint(this->pasynUserSelf, ASYN_TRACE_ERROR,
-        "%s: cannot open config file '%s'\n", functionName, configFile);
-      printf("[Config] ERROR: cannot open config file '%s'\n", configFile);
-    } else {
-      printf("[Config] Loading '%s' for %d axes\n", configFile, numAxes);
-      char lineBuf[256];
-      while (fgets(lineBuf, sizeof(lineBuf), fp) != NULL) {
-        // Strip trailing newline/carriage-return
-        size_t len = strlen(lineBuf);
-        while (len > 0 && (lineBuf[len-1] == '\n' || lineBuf[len-1] == '\r'))
-          lineBuf[--len] = '\0';
-
-        // Skip blank lines and comment lines starting with '#'
-        if (len == 0 || lineBuf[0] == '#') continue;
-
-        // Find the '%' placeholder that represents the axis number
-        char *pct = strchr(lineBuf, '%');
-        if (pct == NULL) continue;  // no axis placeholder — skip
-
-        // Everything after '%' (plus optional space) is the command verb
-        // Build the command for each axis: "<physaddr> <verb>"
-        char *verb = pct + 1;
-        // skip optional leading space after '%'
-        while (*verb == ' ') verb++;
-
-        for (int ax=0; ax<numAxes; ax++) {
-          int phys = ax + 1;
-          if (axismap != NULL) phys = axismap[ax];
-
-          // Build the part before '%' (may contain a numeric literal like "1.000")
-          // Replace '%' with the physical axis number
-          char cmdBuf[256];
-          int prefixLen = (int)(pct - lineBuf);
-          // trim trailing space from prefix
-          while (prefixLen > 0 && lineBuf[prefixLen-1] == ' ') prefixLen--;
-
-          if (prefixLen > 0) {
-            // Line of the form: "<value> % <verb>"  →  "<value> <phys> <verb>"
-            snprintf(cmdBuf, sizeof(cmdBuf), "%.*s %d %s\n", prefixLen, lineBuf, phys, verb);
-          } else {
-            // Line of the form: "% <verb>"  →  "<phys> <verb>"
-            snprintf(cmdBuf, sizeof(cmdBuf), "%d %s\n", phys, verb);
-          }
-
-          strncpy(outString_, cmdBuf, sizeof(outString_)-1);
-          outString_[sizeof(outString_)-1] = '\0';
-
-          printf("[Config] Axis %d: %s", phys, cmdBuf);
-
-          writeController();
-          // Small delay so controller can process each command
-          epicsThreadSleep(0.05);
-        }
+      if (status != asynSuccess) {
+        asynPrint(
+            this->pasynUserSelf,
+            ASYN_TRACE_ERROR,
+            "%s: failed to apply config file '%s' to physical axis %d\n",
+            functionName,
+            configFile,
+            physicalAxis);
       }
-      fclose(fp);
     }
+
+    axis[ax] = new SMCpolluxAxis(
+        this,
+        ax,
+        physicalAxis);
   }
 
   startPoller(movingPollPeriod, idlePollPeriod, 2);
+}
+
+asynStatus SMCpolluxController::applyConfigFileToPhysicalAxis(
+    int physicalAxis,
+    const char *configFile)
+{
+  static const char *functionName =
+      "SMCpolluxController::applyConfigFileToPhysicalAxis";
+
+  if (configFile == NULL || configFile[0] == '\0') {
+    asynPrint(
+        this->pasynUserSelf,
+        ASYN_TRACE_ERROR,
+        "%s: empty configuration filename\n",
+        functionName);
+
+    return asynError;
+  }
+
+  FILE *fp = fopen(configFile, "r");
+
+  if (fp == NULL) {
+    asynPrint(
+        this->pasynUserSelf,
+        ASYN_TRACE_ERROR,
+        "%s: cannot open config file '%s'\n",
+        functionName,
+        configFile);
+
+    printf(
+        "[Config] ERROR: cannot open config file '%s'\n",
+        configFile);
+
+    return asynError;
+  }
+
+  printf(
+      "[Config] Loading '%s' for physical axis %d\n",
+      configFile,
+      physicalAxis);
+
+  asynStatus result = asynSuccess;
+  char lineBuf[256];
+
+  while (fgets(lineBuf, sizeof(lineBuf), fp) != NULL) {
+    size_t len = strlen(lineBuf);
+
+    while (len > 0 &&
+           (lineBuf[len - 1] == '\n' ||
+            lineBuf[len - 1] == '\r')) {
+      lineBuf[--len] = '\0';
+    }
+
+    if (len == 0 || lineBuf[0] == '#') {
+      continue;
+    }
+
+    char *pct = strchr(lineBuf, '%');
+
+    if (pct == NULL) {
+      continue;
+    }
+
+    char *verb = pct + 1;
+
+    while (*verb == ' ') {
+      verb++;
+    }
+
+    int prefixLen = (int)(pct - lineBuf);
+
+    while (prefixLen > 0 &&
+           lineBuf[prefixLen - 1] == ' ') {
+      prefixLen--;
+    }
+
+    char cmdBuf[256];
+
+    if (prefixLen > 0) {
+      snprintf(
+          cmdBuf,
+          sizeof(cmdBuf),
+          "%.*s %d %s\n",
+          prefixLen,
+          lineBuf,
+          physicalAxis,
+          verb);
+    } else {
+      snprintf(
+          cmdBuf,
+          sizeof(cmdBuf),
+          "%d %s\n",
+          physicalAxis,
+          verb);
+    }
+
+    strncpy(
+        outString_,
+        cmdBuf,
+        sizeof(outString_) - 1);
+
+    outString_[sizeof(outString_) - 1] = '\0';
+
+    printf(
+        "[Config] Axis %d: %s",
+        physicalAxis,
+        cmdBuf);
+
+    result = writeController();
+
+    if (result != asynSuccess) {
+      asynPrint(
+          this->pasynUserSelf,
+          ASYN_TRACE_ERROR,
+          "%s: failed command for physical axis %d: %s",
+          functionName,
+          physicalAxis,
+          cmdBuf);
+
+      break;
+    }
+
+    epicsThreadSleep(0.05);
+  }
+
+  fclose(fp);
+  return result;
+}
+
+asynStatus SMCpolluxController::loadAxisConfigFile(
+    int axisNo,
+    const char *configFile)
+{
+  static const char *functionName =
+      "SMCpolluxController::loadAxisConfigFile";
+
+  if (axisNo < 0 || axisNo >= numAxes_) {
+    asynPrint(
+        this->pasynUserSelf,
+        ASYN_TRACE_ERROR,
+        "%s: invalid logical axis %d; valid range is 0 to %d\n",
+        functionName,
+        axisNo,
+        numAxes_ - 1);
+
+    return asynError;
+  }
+
+  if (configFile == NULL || configFile[0] == '\0') {
+    asynPrint(
+        this->pasynUserSelf,
+        ASYN_TRACE_ERROR,
+        "%s: empty configuration filename for logical axis %d\n",
+        functionName,
+        axisNo);
+
+    return asynError;
+  }
+
+  SMCpolluxAxis *pAxis = axis[axisNo];
+
+  if (pAxis == NULL) {
+    asynPrint(
+        this->pasynUserSelf,
+        ASYN_TRACE_ERROR,
+        "%s: logical axis %d has not been created\n",
+        functionName,
+        axisNo);
+
+    return asynError;
+  }
+
+  asynStatus status = applyConfigFileToPhysicalAxis(
+      pAxis->getPhysicalAxis(),
+      configFile);
+
+  if (status != asynSuccess) {
+    return status;
+  }
+
+  return pAxis->refreshConfiguration();
 }
 
 /** Change the resolution of an axis
@@ -312,6 +527,46 @@ extern "C" int SMCpolluxCreateController(const char *portName, const char *SMCpo
   return(asynSuccess);
 }
 
+extern "C" int SMCpolluxLoadAxisConfig(
+    const char *SMCpolluxPortName,
+    int axisNo,
+    const char *configFile)
+{
+  static const char *functionName =
+      "SMCpolluxLoadAxisConfig";
+
+  SMCpolluxController *pC =
+      (SMCpolluxController *)
+      findAsynPortDriver(SMCpolluxPortName);
+
+  if (pC == NULL) {
+    printf(
+        "SMCpolluxDriver.cpp:%s: Error port %s not found\n",
+        functionName,
+        SMCpolluxPortName);
+
+    return asynError;
+  }
+
+  if (configFile == NULL || configFile[0] == '\0') {
+    printf(
+        "SMCpolluxDriver.cpp:%s: empty config file for axis %d\n",
+        functionName,
+        axisNo);
+
+    return asynError;
+  }
+
+  pC->lock();
+
+  asynStatus status =
+      pC->loadAxisConfigFile(axisNo, configFile);
+
+  pC->unlock();
+
+  return status;
+}
+
 /** Enable or disable sending velocity/acceleration to the controller on every move.
   * When disabled, the controller uses the values set at initialization (e.g. from a config file).
   * \param[in] SMCpolluxPortName  The asyn port name of the controller
@@ -402,7 +657,37 @@ static void SMCpolluxCreateControllerCallFunc(const iocshArgBuf *args)
   }
   SMCpolluxCreateController(args[0].sval, args[1].sval, args[2].ival, args[3].ival, args[4].ival, (i==0)?NULL:map, debugLevel, configFile);
 }
+static const iocshArg SMCpolluxLoadAxisConfigArg0 =
+    {"SMC pollux port name", iocshArgString};
 
+static const iocshArg SMCpolluxLoadAxisConfigArg1 =
+    {"Logical axis number (zero based)", iocshArgInt};
+
+static const iocshArg SMCpolluxLoadAxisConfigArg2 =
+    {"Axis config file", iocshArgString};
+
+static const iocshArg * const
+SMCpolluxLoadAxisConfigArgs[] = {
+    &SMCpolluxLoadAxisConfigArg0,
+    &SMCpolluxLoadAxisConfigArg1,
+    &SMCpolluxLoadAxisConfigArg2
+};
+
+static const iocshFuncDef
+SMCpolluxLoadAxisConfigDef = {
+    "SMCpolluxLoadAxisConfig",
+    3,
+    SMCpolluxLoadAxisConfigArgs
+};
+
+static void SMCpolluxLoadAxisConfigCallFunc(
+    const iocshArgBuf *args)
+{
+  SMCpolluxLoadAxisConfig(
+      args[0].sval,
+      args[1].ival,
+      args[2].sval);
+}
 static const iocshArg SMCpolluxSetSendVelAccelArg0 = {"SMC pollux port name", iocshArgString};
 static const iocshArg SMCpolluxSetSendVelAccelArg1 = {"Enable (1=send vel/accel on move, 0=use initialized values)", iocshArgInt};
 static const iocshArg * const SMCpolluxSetSendVelAccelArgs[] = {&SMCpolluxSetSendVelAccelArg0,
@@ -428,6 +713,7 @@ static void SMCpolluxChangeResolutionCallFunc(const iocshArgBuf *args)
 static void SMCpolluxRegister(void)
 {
   iocshRegister(&SMCpolluxCreateControllerDef, SMCpolluxCreateControllerCallFunc);
+  iocshRegister(&SMCpolluxLoadAxisConfigDef,SMCpolluxLoadAxisConfigCallFunc);
   iocshRegister(&SMCpolluxSetSendVelAccelDef, SMCpolluxSetSendVelAccelCallFunc);
   iocshRegister(&SMCpolluxChangeResolutionDef, SMCpolluxChangeResolutionCallFunc);
 }

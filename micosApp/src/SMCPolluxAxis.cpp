@@ -36,36 +36,35 @@ SMCpolluxAxis::SMCpolluxAxis(SMCpolluxController *pC, int axis,int physaddr)
     asynPrint(pasynUser_, ASYN_TRACE_ERROR,
     "## WARNING version empty asyn axis %d physical axis %d, it may not work.. check connection and axis ids\n",axis,physaddr);
   }
-  sprintf(pC_->outString_, "%i getpitch" TERMINATOR, (physaddr ));
-  pC_->writeReadController();
-  pitch_ = atof( (char *) pC_->inString_ );
+  // sprintf(pC_->outString_, "%i getpitch" TERMINATOR, (physaddr ));
+  // pC_->writeReadController();
+  // pitch_ = atof( (char *) pC_->inString_ );
 
+  // sprintf(pC_->outString_, "%i getpolepairs" TERMINATOR, (physaddr ));
+  // pC_->writeReadController();
+  // polePairs_ = atoi( (char *) pC_->inString_ );
 
-  sprintf(pC_->outString_, "%i getpolepairs" TERMINATOR, (physaddr ));
-  pC_->writeReadController();
-  polePairs_ = atoi( (char *) pC_->inString_ );
-
-  sprintf(pC_->outString_, "%i getclperiod" TERMINATOR, (physaddr ));
-  pC_->writeReadController();
-  clPeriod_ = atof( (char *) pC_->inString_ );
+  // sprintf(pC_->outString_, "%i getclperiod" TERMINATOR, (physaddr ));
+  // pC_->writeReadController();
+  // clPeriod_ = atof( (char *) pC_->inString_ );
 
   // Dump configured acceleration once at startup for diagnostics.
-  sprintf(pC_->outString_, "%i gna" TERMINATOR, (physaddr ));
-  pC_->writeReadController();
-  double startupAcceleration = atof((char *)pC_->inString_);
-  printf("axis %d startup acceleration %.4f\n", physaddr, startupAcceleration);
-  asynPrint(pasynUser_, ASYN_TRACE_FLOW,
-    "axis %d startup acceleration %.4f\n", physaddr, startupAcceleration);
+  // sprintf(pC_->outString_, "%i gna" TERMINATOR, (physaddr ));
+  // pC_->writeReadController();
+  // double startupAcceleration = atof((char *)pC_->inString_);
+  // printf("axis %d startup acceleration %.4f\n", physaddr, startupAcceleration);
+  // asynPrint(pasynUser_, ASYN_TRACE_FLOW,
+  //   "axis %d startup acceleration %.4f\n", physaddr, startupAcceleration);
 
-  sprintf(pC_->outString_, "%i gnv" TERMINATOR, (physaddr ));
-  pC_->writeReadController();
-  double startupVelocity = atof((char *)pC_->inString_);
-  printf("axis %d startup velocity %.4f\n", physaddr, startupVelocity);
-  asynPrint(pasynUser_, ASYN_TRACE_FLOW,
-    "axis %d startup velocity %.4f\n", physaddr, startupVelocity);
+  // sprintf(pC_->outString_, "%i gnv" TERMINATOR, (physaddr ));
+  // pC_->writeReadController();
+  // double startupVelocity = atof((char *)pC_->inString_);
+  // printf("axis %d startup velocity %.4f\n", physaddr, startupVelocity);
+  // asynPrint(pasynUser_, ASYN_TRACE_FLOW,
+  //   "axis %d startup velocity %.4f\n", physaddr, startupVelocity);
 
   //axisRes_ = pitch_ / ( 4.0 * polePairs_);
-  axisRes_ = pitch_;
+  // axisRes_ = pitch_;
 /*
   switch (motorForm_)
   {
@@ -88,33 +87,140 @@ SMCpolluxAxis::SMCpolluxAxis(SMCpolluxController *pC, int axis,int physaddr)
   /* Enable gain support so that the CNEN field can be used to send
      the init command to clear a motor fault for stepper motors, even
      though they lack closed-loop support. */
-  setIntegerParam(pC_->motorStatusGainSupport_, 1);
+    setIntegerParam(pC_->motorStatusGainSupport_, 1);
+    refreshConfiguration();
 
   // Determine the travel limits (will change after homing)
-  sprintf(pC_->outString_, "%i getnlimit" TERMINATOR, (physaddr ));
-  pC_->writeReadController();
-  sscanf(pC_->inString_, "%lf %lf", &negTravelLimit_, &posTravelLimit_);
+  // sprintf(pC_->outString_, "%i getnlimit" TERMINATOR, (physaddr ));
+  // pC_->writeReadController();
+  // sscanf(pC_->inString_, "%lf %lf", &negTravelLimit_, &posTravelLimit_);
 
   // Read switch configuration once at init time
   // Bit 0: polarity (0 = NO, 1 = NC)
   // Bit 1: mask (0 = enabled, 1 = disabled)
   // Note: Pollux may return values on separate lines
+  // lowLimitConfig_ = 0;
+  // highLimitConfig_ = 0;
+  // sprintf(pC_->outString_, "%i getsw" TERMINATOR, (physaddr));
+  // pC_->writeReadController();
+  // int numParsed = sscanf(pC_->inString_, "%i %i", &lowLimitConfig_, &highLimitConfig_);
+  // if (numParsed == 1) {
+  //   size_t nread;
+  //   pC_->readController(pC_->inString_, sizeof(pC_->inString_), &nread, 0.5);
+  //   if (nread > 0) {
+  //     highLimitConfig_ = atoi(pC_->inString_);
+  //   }
+  // }
+  // asynPrint(pasynUser_, ASYN_TRACE_FLOW,
+  //   "axis %d switch config: low=%d high=%d\n", physaddr, lowLimitConfig_, highLimitConfig_);
+
+}
+
+asynStatus SMCpolluxAxis::refreshConfiguration()
+{
+  asynStatus status;
+
+  sprintf(pC_->outString_, "%i getpitch" TERMINATOR, axisid);
+  status = pC_->writeReadController();
+  if (status != asynSuccess) return status;
+  pitch_ = atof((char *)pC_->inString_);
+
+  sprintf(pC_->outString_, "%i getpolepairs" TERMINATOR, axisid);
+  status = pC_->writeReadController();
+  if (status != asynSuccess) return status;
+  polePairs_ = atoi((char *)pC_->inString_);
+
+  sprintf(pC_->outString_, "%i getclperiod" TERMINATOR, axisid);
+  status = pC_->writeReadController();
+  if (status != asynSuccess) return status;
+  clPeriod_ = atof((char *)pC_->inString_);
+
+  sprintf(pC_->outString_, "%i gna" TERMINATOR, axisid);
+  status = pC_->writeReadController();
+  if (status != asynSuccess) return status;
+
+  double startupAcceleration = atof((char *)pC_->inString_);
+  printf(
+      "axis %d configured acceleration %.4f\n",
+      axisid,
+      startupAcceleration);
+
+  asynPrint(
+      pasynUser_,
+      ASYN_TRACE_FLOW,
+      "axis %d configured acceleration %.4f\n",
+      axisid,
+      startupAcceleration);
+
+  sprintf(pC_->outString_, "%i gnv" TERMINATOR, axisid);
+  status = pC_->writeReadController();
+  if (status != asynSuccess) return status;
+
+  double startupVelocity = atof((char *)pC_->inString_);
+  printf(
+      "axis %d configured velocity %.4f\n",
+      axisid,
+      startupVelocity);
+
+  asynPrint(
+      pasynUser_,
+      ASYN_TRACE_FLOW,
+      "axis %d configured velocity %.4f\n",
+      axisid,
+      startupVelocity);
+
+  axisRes_ = pitch_;
+
+  sprintf(pC_->outString_, "%i getnlimit" TERMINATOR, axisid);
+  status = pC_->writeReadController();
+  if (status != asynSuccess) return status;
+
+  sscanf(
+      pC_->inString_,
+      "%lf %lf",
+      &negTravelLimit_,
+      &posTravelLimit_);
+
   lowLimitConfig_ = 0;
   highLimitConfig_ = 0;
-  sprintf(pC_->outString_, "%i getsw" TERMINATOR, (physaddr));
-  pC_->writeReadController();
-  int numParsed = sscanf(pC_->inString_, "%i %i", &lowLimitConfig_, &highLimitConfig_);
+
+  sprintf(pC_->outString_, "%i getsw" TERMINATOR, axisid);
+  status = pC_->writeReadController();
+  if (status != asynSuccess) return status;
+
+  int numParsed = sscanf(
+      pC_->inString_,
+      "%i %i",
+      &lowLimitConfig_,
+      &highLimitConfig_);
+
   if (numParsed == 1) {
-    size_t nread;
-    pC_->readController(pC_->inString_, sizeof(pC_->inString_), &nread, 0.5);
+    size_t nread = 0;
+
+    status = pC_->readController(
+        pC_->inString_,
+        sizeof(pC_->inString_),
+        &nread,
+        0.5);
+
+    if (status != asynSuccess) return status;
+
     if (nread > 0) {
       highLimitConfig_ = atoi(pC_->inString_);
     }
   }
-  asynPrint(pasynUser_, ASYN_TRACE_FLOW,
-    "axis %d switch config: low=%d high=%d\n", physaddr, lowLimitConfig_, highLimitConfig_);
 
+  asynPrint(
+      pasynUser_,
+      ASYN_TRACE_FLOW,
+      "axis %d switch config: low=%d high=%d\n",
+      axisid,
+      lowLimitConfig_,
+      highLimitConfig_);
+
+  return asynSuccess;
 }
+
 /** Change the axis resolution
   * \param[in] newResolution The new resolution
   */
